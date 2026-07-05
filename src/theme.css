@@ -40,6 +40,14 @@ body {
   height: 100%;
 }
 
+/*
+ * Safe-area insets are applied per-screen with Tailwind arbitrary values, e.g.
+ *   pt-[calc(1.5rem+env(safe-area-inset-top))]
+ * to keep interactive content clear of the device status bar (clock, battery,
+ * signal), the notch/punch-hole camera, and the home indicator. The forest
+ * backdrop is intentionally full-bleed and slides under these.
+ */
+
 body {
   margin: 0;
   background-color: var(--color-night-950);

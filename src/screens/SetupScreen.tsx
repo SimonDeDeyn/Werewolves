@@ -4,7 +4,7 @@
  */
 export default function SetupScreen({ onBack }: { onBack: () => void }) {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center px-6 text-center">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center px-6 py-[max(1.5rem,env(safe-area-inset-top))] text-center">
       <h1 className="font-display text-3xl font-bold tracking-wider text-moon-100">
         New Game
       </h1>

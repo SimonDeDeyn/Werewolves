@@ -1,5 +1,6 @@
 import { byTeam, TEAM_LABELS, type Character, type Team } from "../data/characters";
 import TeamIcon from "../components/TeamIcon";
+import CharacterPortrait from "../components/CharacterPortrait";
 
 const TEAM_ORDER: Team[] = ["village", "werewolf", "solo"];
 
@@ -13,25 +14,31 @@ function CharacterCard({ character }: { character: Character }) {
   return (
     <article className="panel p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <span className={TEAM_ACCENT[character.team]}>
-            <TeamIcon team={character.team} className="h-5 w-5" />
-          </span>
-          <h3 className="font-display text-lg font-semibold tracking-wide text-moon-100">
-            {character.name}
-          </h3>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <span className={TEAM_ACCENT[character.team]}>
+              <TeamIcon team={character.team} className="h-5 w-5" />
+            </span>
+            <h3 className="font-display text-lg font-semibold tracking-wide text-moon-100">
+              {character.name}
+            </h3>
+          </div>
+          {character.nightOrder !== null && (
+            <span
+              className="mt-2 inline-block rounded-full border border-pine-500 bg-night-800 px-2.5 py-0.5 text-[0.65rem] tracking-widest text-moss-200 uppercase"
+              title="Position in the night wake-up sequence"
+            >
+              night {character.nightOrder}
+              {character.firstNightOnly ? " · first only" : ""}
+            </span>
+          )}
         </div>
-        {character.nightOrder !== null && (
-          <span
-            className="shrink-0 rounded-full border border-pine-500 bg-night-800 px-2.5 py-0.5 text-[0.65rem] tracking-widest text-moss-200 uppercase"
-            title="Position in the night wake-up sequence"
-          >
-            night {character.nightOrder}
-            {character.firstNightOnly ? " · first only" : ""}
-          </span>
-        )}
+        <CharacterPortrait
+          character={character}
+          className="h-16 w-16 shrink-0 drop-shadow-[0_0_10px_rgba(0,0,0,0.5)]"
+        />
       </div>
-      <p className="mt-2 text-sm text-moss-200 italic">{character.description}</p>
+      <p className="mt-3 text-sm text-moss-200 italic">{character.description}</p>
       <p className="mt-2 text-sm leading-relaxed text-moon-200">{character.ability}</p>
       {character.oncePerGame && (
         <p className="mt-1.5 text-[0.7rem] tracking-widest text-bark-300 uppercase">
@@ -44,7 +51,7 @@ function CharacterCard({ character }: { character: Character }) {
 
 export default function CompendiumScreen({ onBack }: { onBack: () => void }) {
   return (
-    <main className="mx-auto min-h-dvh max-w-5xl px-4 pt-6 pb-16 sm:px-6">
+    <main className="mx-auto min-h-dvh max-w-5xl px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(4rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-6">
       <header className="mb-8 flex items-center gap-4">
         <button className="btn-lantern px-4 py-2 text-sm" onClick={onBack}>
           ← Back

@@ -45,6 +45,26 @@ wakes), `description`, and `ability`. The app derives role selection, night
 narration order, and the compendium from this single file. Night-order numbers
 are spaced out (10, 15, 20…) so new roles can be slotted in without renumbering.
 
+### Character art
+
+Every character shows a **head portrait** in the Characters menu and has a
+second **full-card illustration** reserved for the upcoming "reveal your role"
+workflow. Until real illustrations exist, the app renders a stylized, tinted
+woodcut **SVG emblem** per character (generated in code — see
+[`src/components/characterMotifs.tsx`](src/components/characterMotifs.tsx)).
+
+To use real illustrated art, drop image files named after the character `id`
+into these folders — they replace the emblems automatically on the next build,
+no code changes needed:
+
+| Image | Folder | Example |
+| --- | --- | --- |
+| Head | `src/assets/portraits/` | `seer.webp` |
+| Full card | `src/assets/cards/` | `seer.webp` |
+
+Ready-to-run generation prompts for all 40 characters (both images each, in the
+dark-forest woodcut style) are in [`docs/art-briefs.md`](docs/art-briefs.md).
+
 ## Run locally
 
 ```bash
