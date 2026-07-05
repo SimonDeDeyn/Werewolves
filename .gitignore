@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 *.local
+*.tsbuildinfo
 
 # Logs
 npm-debug.log*
