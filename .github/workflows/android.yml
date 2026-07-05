@@ -1,0 +1,70 @@
+name: Build Android APK
+
+# Builds an installable (sideloadable) debug APK and publishes it to a rolling
+# "latest" GitHub Release. No Play Store, no signing setup needed. Download the
+# newest build any time from:
+#   https://github.com/SimonDeDeyn/Werewolves/releases/latest/download/werewolves.apk
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to publish the release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web app
+        run: npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages (API 36)
+        run: yes | sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Sync web build into the Android project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk werewolves.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: werewolves-android-apk
+          path: werewolves.apk
+          if-no-files-found: error
+
+      - name: Publish to the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Replace the single rolling "latest" release so there's always exactly
+          # one, always current, at a stable download URL.
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest werewolves.apk \
+            --title "Werewolves — latest Android build" \
+            --notes "Latest APK, built automatically from commit ${{ github.sha }}. Download **werewolves.apk** below and sideload it on Android."
