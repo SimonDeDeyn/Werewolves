@@ -1,0 +1,109 @@
+/* Dark forestry theme — nighttime village in the woods. */
+
+@import "tailwindcss";
+
+@import "@fontsource/cinzel/400.css";
+@import "@fontsource/cinzel/600.css";
+@import "@fontsource/cinzel/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+
+@theme {
+  /* Base palette: deep greens, blacks, muted browns */
+  --color-night-950: #060b08;
+  --color-night-900: #0a120c;
+  --color-night-800: #0f1a12;
+  --color-night-700: #16241a;
+  --color-pine-600: #1e3023;
+  --color-pine-500: #2b4231;
+  --color-moss-400: #557a5c;
+  --color-moss-300: #7d9c7f;
+  --color-moss-200: #a7bfa4;
+  --color-bark-600: #3d3226;
+  --color-bark-400: #5c4a36;
+  --color-bark-300: #8a7358;
+  --color-moon-100: #f0e9d2;
+  --color-moon-200: #ddd2ac;
+  --color-moon-400: #b3a878;
+  --color-blood-500: #93392f;
+  --color-blood-700: #5f241f;
+
+  --font-display: "Cinzel", "Georgia", serif;
+  --font-body: "Inter", system-ui, sans-serif;
+
+  --shadow-lantern: 0 0 24px rgba(221, 210, 172, 0.12);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-night-950);
+  color: var(--color-moon-100);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Drifting mist bands used by the forest backdrop */
+@keyframes mist-drift {
+  from {
+    transform: translateX(-12%);
+  }
+  to {
+    transform: translateX(12%);
+  }
+}
+
+.mist {
+  animation: mist-drift 26s ease-in-out infinite alternate;
+}
+
+.mist-slow {
+  animation: mist-drift 44s ease-in-out infinite alternate-reverse;
+}
+
+/* Shared surfaces */
+.panel {
+  background: linear-gradient(
+    170deg,
+    color-mix(in srgb, var(--color-night-700) 88%, transparent),
+    color-mix(in srgb, var(--color-night-900) 92%, transparent)
+  );
+  border: 1px solid color-mix(in srgb, var(--color-moss-400) 28%, transparent);
+  border-radius: 0.75rem;
+  backdrop-filter: blur(2px);
+}
+
+.btn-lantern {
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  color: var(--color-moon-100);
+  background: linear-gradient(180deg, var(--color-pine-500), var(--color-pine-600));
+  border: 1px solid color-mix(in srgb, var(--color-moss-300) 45%, transparent);
+  border-radius: 0.6rem;
+  box-shadow: var(--shadow-lantern);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    border-color 120ms ease;
+}
+
+.btn-lantern:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--color-moon-200);
+  box-shadow: 0 0 32px rgba(221, 210, 172, 0.2);
+}
+
+.btn-lantern:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-lantern:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
