@@ -30,15 +30,14 @@ export default function Logo({ variant = "full", className }: LogoProps) {
       <circle cx="128" cy="112" r="7" fill="#cdbf95" opacity="0.5" />
       <circle cx="168" cy="140" r="5" fill="#cdbf95" opacity="0.4" />
 
-      {/* Howling wolf head, profile */}
+      {/* Wolf head — front-facing silhouette: round head, two pointy ears */}
       <path
-        d="M150 210 C144 190 142 172 140 156 C139 146 134 139 130 132 L108 110 L119 106
-           L138 120 C143 113 148 99 151 84 L160 62 L171 92 C175 108 176 126 174 141
-           C172 162 167 188 162 210 Z"
+        d="M124 82 L142 106 Q150 116 158 106 L176 82 L172 112 Q179 124 178 134
+           Q170 156 150 170 Q130 156 122 134 Q121 124 128 112 Z"
         fill="#080f0a"
       />
-      <path d="M119 110 L133 124 L122 124 Z" fill="#e7ddbf" opacity="0.9" />
-      <circle cx="151" cy="126" r="2.8" fill="#e7ddbf" opacity="0.85" />
+      <polygon points="132,128 145,133 134,137" fill="#e7ddbf" opacity="0.85" />
+      <polygon points="168,128 155,133 166,137" fill="#e7ddbf" opacity="0.85" />
 
       {/* Treeline along the base of the ring */}
       <g fill="#0f1a12">
