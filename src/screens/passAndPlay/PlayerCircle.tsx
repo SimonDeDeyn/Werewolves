@@ -1,0 +1,83 @@
+/**
+ * The table: player tokens arranged in a circle in seating order. Dead players
+ * are dimmed and crossed; when interactive, tapping a living player toggles a
+ * selection (used to mark who was eliminated this round).
+ */
+export default function PlayerCircle({
+  players,
+  dead,
+  selected = [],
+  onToggle,
+  centerLabel,
+}: {
+  players: string[];
+  dead: string[];
+  selected?: string[];
+  onToggle?: (name: string) => void;
+  centerLabel?: string;
+}) {
+  const n = players.length;
+
+  return (
+    <div className="relative mx-auto aspect-square w-[min(340px,86vw)]">
+      {/* Table ring */}
+      <div className="absolute inset-[14%] rounded-full border border-pine-500/40 bg-night-900/30" />
+      {centerLabel && (
+        <div className="absolute inset-0 grid place-items-center">
+          <span className="font-display text-sm tracking-[0.3em] text-moss-300 uppercase">
+            {centerLabel}
+          </span>
+        </div>
+      )}
+
+      {players.map((name, i) => {
+        const angle = (-90 + (i * 360) / n) * (Math.PI / 180);
+        const x = 50 + 38 * Math.cos(angle);
+        const y = 50 + 38 * Math.sin(angle);
+        const isDead = dead.includes(name);
+        const isSel = selected.includes(name);
+        const interactive = !!onToggle && !isDead;
+
+        return (
+          <button
+            key={i}
+            type="button"
+            disabled={!interactive}
+            onClick={() => interactive && onToggle!(name)}
+            className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
+            style={{ left: `${x}%`, top: `${y}%` }}
+          >
+            <span
+              className={`relative grid h-11 w-11 place-items-center rounded-full border font-display text-base transition-colors ${
+                isDead
+                  ? "border-blood-700 bg-night-800 text-moss-400 opacity-70"
+                  : isSel
+                    ? "border-blood-500 bg-blood-700/40 text-moon-100 ring-2 ring-blood-500"
+                    : "border-moss-400/60 bg-pine-600 text-moon-100"
+              }`}
+            >
+              {name.charAt(0).toUpperCase()}
+              {isDead && (
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  viewBox="0 0 40 40"
+                  aria-hidden="true"
+                >
+                  <line x1="7" y1="8" x2="33" y2="32" stroke="#b3271e" strokeWidth="3.5" strokeLinecap="round" />
+                  <line x1="33" y1="8" x2="7" y2="32" stroke="#b3271e" strokeWidth="3.5" strokeLinecap="round" />
+                </svg>
+              )}
+            </span>
+            <span
+              className={`max-w-[4.5rem] truncate text-[0.7rem] ${
+                isDead ? "text-moss-400 line-through" : "text-moss-200"
+              }`}
+            >
+              {name}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}

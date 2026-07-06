@@ -9,10 +9,14 @@ import type { Assignment } from "../../game/setup";
  */
 export default function RevealStep({
   assignments,
+  canBeginNight,
+  onBeginNight,
   onReplay,
   onExit,
 }: {
   assignments: Assignment[];
+  canBeginNight: boolean;
+  onBeginNight: () => void;
   onReplay: () => void;
   onExit: () => void;
 }) {
@@ -29,17 +33,21 @@ export default function RevealStep({
           Everyone knows their role
         </h2>
         <p className="max-w-sm text-sm text-moss-200">
-          The village settles in for the night. When you're ready, the first night phase will begin
-          — coming in the next update.
+          The village settles in for the night.
+          {canBeginNight
+            ? " The moderator can start running the night whenever you're ready."
+            : " App-narrated nights are coming in the next update."}
         </p>
-        <button
-          className="btn-lantern px-6 py-3.5 text-lg opacity-60"
-          disabled
-          title="Coming soon"
-        >
-          Begin the night
-          <span className="ml-2 text-[0.6rem] tracking-widest text-moss-300 uppercase">soon</span>
-        </button>
+        {canBeginNight ? (
+          <button className="btn-lantern px-6 py-3.5 text-lg" onClick={onBeginNight}>
+            Begin the night
+          </button>
+        ) : (
+          <button className="btn-lantern px-6 py-3.5 text-lg opacity-60" disabled title="Coming soon">
+            Begin the night
+            <span className="ml-2 text-[0.6rem] tracking-widest text-moss-300 uppercase">soon</span>
+          </button>
+        )}
         <div className="mt-2 flex gap-3">
           <button className="btn-lantern px-5 py-3" onClick={onReplay}>
             Re-deal

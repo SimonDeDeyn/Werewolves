@@ -3,14 +3,16 @@ import {
   distribute,
   emptyDraft,
   roleSlots,
+  shuffle,
   type Assignment,
   type SetupDraft,
 } from "../../game/setup";
 import RoleSelectStep from "./RoleSelectStep";
 import NoticeBoardStep from "./NoticeBoardStep";
 import RevealStep from "./RevealStep";
+import NightPhase from "./NightPhase";
 
-type Step = "names" | "moderator" | "roles" | "board" | "reveal";
+type Step = "names" | "moderator" | "roles" | "board" | "reveal" | "night";
 
 /* ----------------------------- Player names ----------------------------- */
 
@@ -171,17 +173,28 @@ const STEP_TITLES: Record<Step, string> = {
   roles: "Choose the cast",
   board: "The notice board",
   reveal: "The reveal",
+  night: "The night",
 };
 
 export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
   const [step, setStep] = useState<Step>("names");
   const [draft, setDraft] = useState<SetupDraft>(emptyDraft());
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  // Fixed shuffled order for the notice board, so pins can't be mapped to seats
+  // and stay put across rounds as roles get crossed off.
+  const [board, setBoard] = useState<Assignment[]>([]);
 
   const deal = () => {
-    setAssignments(distribute(draft));
+    const next = distribute(draft);
+    setAssignments(next);
+    setBoard(shuffle(next));
     setStep("board");
   };
+
+  const moderatorName =
+    draft.moderatorMode === "player" && draft.moderatorIndex !== null
+      ? draft.players[draft.moderatorIndex]
+      : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -220,12 +233,8 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
 
       {step === "board" && (
         <NoticeBoardStep
-          assignments={assignments}
-          moderatorName={
-            draft.moderatorMode === "player" && draft.moderatorIndex !== null
-              ? draft.players[draft.moderatorIndex]
-              : null
-          }
+          board={board}
+          moderatorName={moderatorName}
           onRestart={deal}
           onReveal={() => setStep("reveal")}
         />
@@ -234,12 +243,18 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
       {step === "reveal" && (
         <RevealStep
           assignments={assignments}
+          canBeginNight={draft.moderatorMode === "player"}
+          onBeginNight={() => setStep("night")}
           onReplay={() => {
             deal();
             setStep("board");
           }}
           onExit={onExit}
         />
+      )}
+
+      {step === "night" && (
+        <NightPhase assignments={assignments} board={board} onExit={onExit} />
       )}
     </div>
   );
