@@ -92,10 +92,21 @@ export function distribute(draft: SetupDraft): Assignment[] {
     for (let i = 0; i < n; i++) pool.push({ id, random: false });
   }
   if (draft.randomize && PASSIVE_FILLERS.length) {
+    const countOf = (id: string) => pool.filter((p) => p.id === id).length;
     while (pool.length < slots) {
-      const pick = PASSIVE_FILLERS[Math.floor(Math.random() * PASSIVE_FILLERS.length)];
+      // Only roles that still have capacity left (respecting maxCount), so a
+      // unique role like the Elder is never dealt twice.
+      const eligible = PASSIVE_FILLERS.filter((c) => countOf(c.id) < (c.maxCount ?? 1));
+      if (!eligible.length) break;
+      // Prefer roles not yet in the game, so fillers are distinct surprises;
+      // only repeat (e.g. Villager) once every distinct passive is used.
+      const fresh = eligible.filter((c) => countOf(c.id) === 0);
+      const choices = fresh.length ? fresh : eligible;
+      const pick = choices[Math.floor(Math.random() * choices.length)];
       pool.push({ id: pick.id, random: true });
     }
+    // Safety net if there are somehow more seats than total filler capacity.
+    while (pool.length < slots) pool.push({ id: "villager", random: true });
   }
   const dealt = shuffle(pool);
   const receivers = draft.players.filter(
