@@ -125,8 +125,15 @@ function CardBack() {
   );
 }
 
-export default function GameCard({ character }: { character: Character }) {
-  const [flipped, setFlipped] = useState(false);
+export default function GameCard({
+  character,
+  initialFlipped = false,
+}: {
+  character: Character;
+  /** Start showing the back (used by the reveal — tap flips to the role). */
+  initialFlipped?: boolean;
+}) {
+  const [flipped, setFlipped] = useState(initialFlipped);
   return (
     <button
       type="button"

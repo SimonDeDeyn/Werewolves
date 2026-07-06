@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { byId } from "../../data/characters";
-import { CardFront } from "../../components/GameCard";
+import GameCard from "../../components/GameCard";
 import type { Assignment } from "../../game/setup";
 
 /**
@@ -78,17 +78,16 @@ export default function RevealStep({
     );
   }
 
-  // The player's private role card.
+  // The player's private card — shown back-up; tap it to flip to the role.
   return (
     <div className="flex flex-col items-center gap-4 py-4 text-center">
       <p className="text-sm text-moss-200">
-        <span className="text-moon-100">{current.player}</span>, you are…
+        <span className="text-moon-100">{current.player}</span>, here is your card
       </p>
-      {character && (
-        <div className="relative aspect-[5/7] w-[300px] max-w-[82vw]">
-          <CardFront character={character} />
-        </div>
-      )}
+      {character && <GameCard key={index} character={character} initialFlipped />}
+      <p className="max-w-xs text-xs text-moss-300 italic">
+        Tap the card to turn it over — and keep it hidden from the others.
+      </p>
       <button
         className="btn-lantern px-6 py-3.5 text-lg"
         onClick={() => {
