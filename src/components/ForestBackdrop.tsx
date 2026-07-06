@@ -164,7 +164,7 @@ export default function ForestBackdrop() {
 
       {/* Moon with clouds crawling across it */}
       <svg
-        className="absolute top-[3%] right-[5%] w-44 sm:w-56"
+        className="absolute top-[-2%] right-[5%] w-44 sm:w-56"
         viewBox="0 0 220 160"
       >
         <defs>
