@@ -1,5 +1,5 @@
 interface Props {
-  onNavigate: (screen: "compendium" | "setup") => void;
+  onNavigate: (screen: "compendium" | "newgame") => void;
 }
 
 export default function HomeScreen({ onNavigate }: Props) {
@@ -19,15 +19,9 @@ export default function HomeScreen({ onNavigate }: Props) {
       <div className="mt-10 flex w-full max-w-xs flex-col gap-3">
         <button
           className="btn-lantern px-6 py-3.5 text-lg"
-          onClick={() => onNavigate("setup")}
+          onClick={() => onNavigate("newgame")}
         >
           New Game
-        </button>
-        <button className="btn-lantern px-6 py-3.5 text-lg" disabled title="Coming soon">
-          Play Online
-          <span className="ml-2 align-middle text-[0.6rem] tracking-widest text-moss-300 uppercase">
-            soon
-          </span>
         </button>
         <button
           className="btn-lantern px-6 py-3.5 text-lg"
