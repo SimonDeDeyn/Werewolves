@@ -23,7 +23,7 @@ function PlayerNamesStep({
   onBack: () => void;
   onNext: (names: string[]) => void;
 }) {
-  const [names, setNames] = useState<string[]>(initial.length ? initial : ["", "", "", ""]);
+  const [names, setNames] = useState<string[]>(initial.length ? initial : ["", "", ""]);
 
   const update = (i: number, v: string) =>
     setNames((prev) => prev.map((n, idx) => (idx === i ? v.slice(0, 24) : n)));
