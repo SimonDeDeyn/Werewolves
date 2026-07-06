@@ -9,8 +9,8 @@
 import { useState } from "react";
 import type { Character, Team } from "../data/characters";
 import TeamIcon from "./TeamIcon";
-import Logo from "./Logo";
 import CharacterPortrait, { cardArtFor, portraitArtFor } from "./CharacterPortrait";
+import heroWerewolf from "../assets/brand/hero-werewolf.jpg";
 
 const TEAM_HEX: Record<Team, string> = {
   village: "#a6c4a0",
@@ -107,15 +107,20 @@ function CardFront({ character }: { character: Character }) {
 function CardBack() {
   return (
     <div
-      className="absolute inset-0 flex items-center justify-center rounded-2xl border-2 p-4 [transform:rotateY(180deg)] [backface-visibility:hidden]"
-      style={{
-        borderColor: "#b3a878",
-        background: "radial-gradient(120% 90% at 50% 0%,#16241a,#0a120c 65%,#060b08)",
-        boxShadow: "0 0 0 1px #000 inset",
-      }}
+      className="absolute inset-0 overflow-hidden rounded-2xl border-2 [transform:rotateY(180deg)] [backface-visibility:hidden]"
+      style={{ borderColor: "#b3a878", boxShadow: "0 0 0 1px #000 inset" }}
     >
-      <div className="pointer-events-none absolute inset-2 rounded-xl border border-moss-400/25" />
-      <Logo variant="full" className="w-4/5" />
+      <img src={heroWerewolf} alt="" className="h-full w-full object-cover" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-night-950/90 via-transparent to-night-950/25" />
+      <div className="pointer-events-none absolute inset-1.5 rounded-xl border border-moon-400/30" />
+      <div className="absolute inset-x-0 bottom-4 text-center">
+        <p className="font-display text-lg font-bold tracking-[0.25em] text-moon-100">
+          WEREWOLVES
+        </p>
+        <p className="font-display text-[0.55rem] tracking-[0.3em] text-moon-400">
+          THE VILLAGE WAKES
+        </p>
+      </div>
     </div>
   );
 }
