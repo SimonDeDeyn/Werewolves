@@ -38,6 +38,11 @@ export function cardArtFor(id: string): string | undefined {
   return CARDS[id];
 }
 
+/** URL of the dropped-in head portrait for a character, if any. */
+export function portraitArtFor(id: string): string | undefined {
+  return PORTRAITS[id];
+}
+
 const TEAM_TINT: Record<Team, string> = {
   village: "#a6c4a0",
   werewolf: "#d0685a",

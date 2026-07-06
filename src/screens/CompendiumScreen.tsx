@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { byTeam, TEAM_LABELS, type Character, type Team } from "../data/characters";
 import TeamIcon from "../components/TeamIcon";
 import CharacterPortrait from "../components/CharacterPortrait";
+import GameCard from "../components/GameCard";
 
 const TEAM_ORDER: Team[] = ["village", "werewolf", "solo"];
 
@@ -10,9 +12,18 @@ const TEAM_ACCENT: Record<Team, string> = {
   solo: "text-moon-400",
 };
 
-function CharacterCard({ character }: { character: Character }) {
+function CharacterCard({
+  character,
+  onOpen,
+}: {
+  character: Character;
+  onOpen: (c: Character) => void;
+}) {
   return (
-    <article className="panel p-4">
+    <article
+      className="panel cursor-pointer p-4 transition-colors hover:border-moss-400/60"
+      onClick={() => onOpen(character)}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
@@ -50,6 +61,7 @@ function CharacterCard({ character }: { character: Character }) {
 }
 
 export default function CompendiumScreen({ onBack }: { onBack: () => void }) {
+  const [selected, setSelected] = useState<Character | null>(null);
   return (
     <main className="mx-auto min-h-dvh max-w-5xl px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(4rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-6">
       <header className="mb-8 flex items-center gap-4">
@@ -71,11 +83,25 @@ export default function CompendiumScreen({ onBack }: { onBack: () => void }) {
           </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {byTeam(team).map((c) => (
-              <CharacterCard key={c.id} character={c} />
+              <CharacterCard key={c.id} character={c} onOpen={setSelected} />
             ))}
           </div>
         </section>
       ))}
+
+      {selected && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/75 p-4 backdrop-blur-sm"
+          onClick={() => setSelected(null)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <GameCard key={selected.id} character={selected} />
+          </div>
+          <p className="text-xs tracking-widest text-moss-300 uppercase">
+            Tap card to flip · tap outside to close
+          </p>
+        </div>
+      )}
     </main>
   );
 }

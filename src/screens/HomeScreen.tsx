@@ -1,3 +1,5 @@
+import Logo from "../components/Logo";
+
 interface Props {
   onNavigate: (screen: "compendium" | "setup") => void;
 }
@@ -5,6 +7,10 @@ interface Props {
 export default function HomeScreen({ onNavigate }: Props) {
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center px-6 py-[max(1.5rem,env(safe-area-inset-top))] pr-[max(1.5rem,env(safe-area-inset-right))] pl-[max(1.5rem,env(safe-area-inset-left))] text-center">
+      <Logo
+        variant="emblem"
+        className="mb-5 h-40 w-40 drop-shadow-[0_0_24px_rgba(221,210,172,0.15)] sm:h-48 sm:w-48"
+      />
       <p className="font-display text-sm tracking-[0.4em] text-moss-300 uppercase">
         Night falls on the village
       </p>
