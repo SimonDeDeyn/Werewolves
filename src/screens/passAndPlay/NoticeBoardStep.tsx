@@ -54,12 +54,12 @@ export default function NoticeBoardStep({
   assignments,
   moderatorName,
   onRestart,
-  onExit,
+  onReveal,
 }: {
   assignments: Assignment[];
   moderatorName: string | null;
   onRestart: () => void;
-  onExit: () => void;
+  onReveal: () => void;
 }) {
   // One pin per seat, shuffled so the order can't be mapped back to players.
   const cast = useMemo(
@@ -100,16 +100,16 @@ export default function NoticeBoardStep({
       </div>
 
       <p className="text-center text-xs text-moss-300 italic">
-        These are the roles hidden among you — the “?” cards stay a mystery. Next: each player
-        privately learns their own, coming in the next update.
+        These are the roles hidden among you — the “?” cards stay a mystery. Now pass the phone so
+        everyone can privately learn their own.
       </p>
 
       <div className="flex gap-3">
         <button className="btn-lantern flex-1 px-4 py-3" onClick={onRestart}>
           Re-deal
         </button>
-        <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
-          Done
+        <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={onReveal}>
+          Begin the reveal →
         </button>
       </div>
     </div>

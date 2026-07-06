@@ -45,7 +45,7 @@ function ArtWindow({ character }: { character: Character }) {
   );
 }
 
-function CardFront({ character }: { character: Character }) {
+export function CardFront({ character }: { character: Character }) {
   const tint = TEAM_HEX[character.team];
   const tags = [
     character.firstNightOnly ? "First night" : null,

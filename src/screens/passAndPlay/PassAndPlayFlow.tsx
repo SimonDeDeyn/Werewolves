@@ -8,8 +8,9 @@ import {
 } from "../../game/setup";
 import RoleSelectStep from "./RoleSelectStep";
 import NoticeBoardStep from "./NoticeBoardStep";
+import RevealStep from "./RevealStep";
 
-type Step = "names" | "moderator" | "roles" | "board";
+type Step = "names" | "moderator" | "roles" | "board" | "reveal";
 
 /* ----------------------------- Player names ----------------------------- */
 
@@ -169,6 +170,7 @@ const STEP_TITLES: Record<Step, string> = {
   moderator: "Moderator",
   roles: "Choose the cast",
   board: "The notice board",
+  reveal: "The reveal",
 };
 
 export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
@@ -225,6 +227,17 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
               : null
           }
           onRestart={deal}
+          onReveal={() => setStep("reveal")}
+        />
+      )}
+
+      {step === "reveal" && (
+        <RevealStep
+          assignments={assignments}
+          onReplay={() => {
+            deal();
+            setStep("board");
+          }}
           onExit={onExit}
         />
       )}

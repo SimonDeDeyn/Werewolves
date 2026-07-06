@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 import { byTeam, TEAM_LABELS, type Character, type Team } from "../../data/characters";
 import CharacterPortrait from "../../components/CharacterPortrait";
 import {
@@ -69,7 +70,7 @@ export default function RoleSelectStep({
   onDistribute,
 }: {
   draft: SetupDraft;
-  setDraft: (d: SetupDraft) => void;
+  setDraft: Dispatch<SetStateAction<SetupDraft>>;
   onBack: () => void;
   onDistribute: () => void;
 }) {
@@ -79,8 +80,11 @@ export default function RoleSelectStep({
   const recWolves = recommendedWolves(slots);
   const error = setupError(draft);
 
-  const setCount = (id: string, next: number) =>
-    setDraft({ ...draft, counts: { ...draft.counts, [id]: Math.max(0, next) } });
+  const bump = (id: string, delta: number) =>
+    setDraft((prev) => ({
+      ...prev,
+      counts: { ...prev.counts, [id]: Math.max(0, (prev.counts[id] ?? 0) + delta) },
+    }));
 
   return (
     <div className="flex flex-col gap-4">
@@ -102,7 +106,7 @@ export default function RoleSelectStep({
           <input
             type="checkbox"
             checked={draft.randomize}
-            onChange={(e) => setDraft({ ...draft, randomize: e.target.checked })}
+            onChange={(e) => setDraft((prev) => ({ ...prev, randomize: e.target.checked }))}
             className="h-4 w-4 accent-moss-400"
           />
           Randomize leftovers
@@ -129,8 +133,8 @@ export default function RoleSelectStep({
                 key={c.id}
                 character={c}
                 count={draft.counts[c.id] ?? 0}
-                onInc={() => setCount(c.id, (draft.counts[c.id] ?? 0) + 1)}
-                onDec={() => setCount(c.id, (draft.counts[c.id] ?? 0) - 1)}
+                onInc={() => bump(c.id, 1)}
+                onDec={() => bump(c.id, -1)}
               />
             ))}
           </div>
