@@ -4,7 +4,7 @@ interface Props {
 
 export default function HomeScreen({ onNavigate }: Props) {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center px-6 py-[max(1.5rem,env(safe-area-inset-top))] pr-[max(1.5rem,env(safe-area-inset-right))] pl-[max(1.5rem,env(safe-area-inset-left))] text-center">
+    <main className="flex min-h-dvh flex-col items-center justify-center px-6 pt-[calc(6rem+env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] pr-[max(1.5rem,env(safe-area-inset-right))] pl-[max(1.5rem,env(safe-area-inset-left))] text-center">
       <p className="font-display text-sm tracking-[0.4em] text-moss-300 uppercase">
         Night falls on the village
       </p>
