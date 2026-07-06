@@ -53,7 +53,7 @@ export const PASSIVE_FILLERS: Character[] = CHARACTERS.filter(
   (c) => c.nightOrder === null && c.team === "village",
 );
 
-function shuffle<T>(arr: T[]): T[] {
+export function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -80,23 +80,30 @@ export function setupError(draft: SetupDraft): string | null {
 export interface Assignment {
   player: string;
   characterId: string;
+  /** True when this seat was filled by the randomizer (shown as a "?"). */
+  random: boolean;
 }
 
 /** Build the role pool (with optional passive fillers), shuffle, and deal. */
 export function distribute(draft: SetupDraft): Assignment[] {
   const slots = roleSlots(draft);
-  const roles: string[] = [];
+  const pool: { id: string; random: boolean }[] = [];
   for (const [id, n] of Object.entries(draft.counts)) {
-    for (let i = 0; i < n; i++) roles.push(id);
+    for (let i = 0; i < n; i++) pool.push({ id, random: false });
   }
   if (draft.randomize && PASSIVE_FILLERS.length) {
-    while (roles.length < slots) {
-      roles.push(PASSIVE_FILLERS[Math.floor(Math.random() * PASSIVE_FILLERS.length)].id);
+    while (pool.length < slots) {
+      const pick = PASSIVE_FILLERS[Math.floor(Math.random() * PASSIVE_FILLERS.length)];
+      pool.push({ id: pick.id, random: true });
     }
   }
-  const dealt = shuffle(roles);
+  const dealt = shuffle(pool);
   const receivers = draft.players.filter(
     (_, i) => !(draft.moderatorMode === "player" && draft.moderatorIndex === i),
   );
-  return receivers.map((player, i) => ({ player, characterId: dealt[i] }));
+  return receivers.map((player, i) => ({
+    player,
+    characterId: dealt[i].id,
+    random: dealt[i].random,
+  }));
 }
