@@ -4,10 +4,14 @@ import type { Assignment } from "../../game/setup";
 import PlayerCircle from "./PlayerCircle";
 import NoticeBoard, { type BoardItem } from "./NoticeBoard";
 
+type Phase = "night" | "day";
+type View = "select" | "board";
+
 /**
- * Moderator-run night phase. The human narrator runs the night out loud; the
- * app is a tracker: mark who was eliminated each night, then view the notice
- * board with the fallen crossed out (and their roles revealed).
+ * Moderator-run game loop. The human narrator runs each phase out loud; the app
+ * tracks eliminations. Nights (the werewolves' kill) and days (the village
+ * vote) alternate, each with a selection screen and an aftermath notice board
+ * where the fallen are crossed out and their roles revealed.
  */
 export default function NightPhase({
   assignments,
@@ -24,9 +28,10 @@ export default function NightPhase({
     [assignments],
   );
 
-  const [dead, setDead] = useState<string[]>([]);
+  const [phase, setPhase] = useState<Phase>("night");
   const [round, setRound] = useState(1);
-  const [view, setView] = useState<"round" | "board">("round");
+  const [view, setView] = useState<View>("select");
+  const [dead, setDead] = useState<string[]>([]);
   const [pending, setPending] = useState<string[]>([]);
   const [lastDeaths, setLastDeaths] = useState<string[]>([]);
 
@@ -52,15 +57,28 @@ export default function NightPhase({
     setView("board");
   };
 
-  /* ------------------------------ Round view ----------------------------- */
-  if (view === "round") {
+  const advance = () => {
+    if (phase === "night") {
+      setPhase("day");
+    } else {
+      setPhase("night");
+      setRound((r) => r + 1);
+    }
+    setView("select");
+  };
+
+  const isNight = phase === "night";
+  const label = `${isNight ? "Night" : "Day"} ${round}`;
+
+  /* --------------------------- Selection screen -------------------------- */
+  if (view === "select") {
     return (
       <div className="flex flex-col items-center gap-4">
-        <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
-          Night {round}
-        </h1>
+        <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">{label}</h1>
         <p className="max-w-sm text-center text-sm text-moss-200">
-          Run the night out loud, then tap anyone who was eliminated.
+          {isNight
+            ? "The werewolves stalk the village. Tap tonight's victim."
+            : "The village gathers and votes. Tap who is sent to the gallows."}
         </p>
 
         <PlayerCircle
@@ -68,13 +86,15 @@ export default function NightPhase({
           dead={dead}
           selected={pending}
           onToggle={toggle}
-          centerLabel={`Night ${round}`}
+          centerLabel={label}
         />
 
         <p className="text-sm text-moss-300">
           {pending.length
-            ? `${pending.length} marked for elimination`
-            : "No one selected — tap a player, or continue if all survived"}
+            ? `${pending.length} marked`
+            : isNight
+              ? "No one selected — tap the victim, or continue if none died"
+              : "No one selected — tap the condemned, or continue with no vote"}
         </p>
 
         <div className="flex w-full max-w-sm gap-3">
@@ -82,30 +102,39 @@ export default function NightPhase({
             Quit
           </button>
           <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={record}>
-            {pending.length ? "Record & show board →" : "No deaths — continue →"}
+            {pending.length
+              ? isNight
+                ? "Record the kill →"
+                : "Record the vote →"
+              : isNight
+                ? "No death — dawn →"
+                : "No execution →"}
           </button>
         </div>
       </div>
     );
   }
 
-  /* ------------------------------ Board view ----------------------------- */
+  /* --------------------------- Aftermath board --------------------------- */
+  const recap = lastDeaths.length
+    ? lastDeaths.map((p) => `${p} — the ${byId(roleOf[p])?.name}`).join(", ")
+    : null;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="text-center">
         <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
-          Night {round} · aftermath
+          {isNight ? `Night ${round} · dawn` : `Day ${round} · dusk`}
         </h1>
-        {lastDeaths.length ? (
-          <p className="mt-1 text-sm text-moss-200">
-            {lastDeaths
-              .map((p) => `${p} — the ${byId(roleOf[p])?.name}`)
-              .join(", ")}{" "}
-            fell.
-          </p>
-        ) : (
-          <p className="mt-1 text-sm text-moss-200">Dawn breaks — everyone survived the night.</p>
-        )}
+        <p className="mt-1 text-sm text-moss-200">
+          {recap
+            ? isNight
+              ? `${recap} did not survive the night.`
+              : `The village executed ${recap}.`
+            : isNight
+              ? "Dawn breaks — everyone survived the night."
+              : "The village spares everyone today."}
+        </p>
       </div>
 
       <NoticeBoard items={boardItems} />
@@ -134,14 +163,8 @@ export default function NightPhase({
           {result ? "Done" : "Quit"}
         </button>
         {!result && (
-          <button
-            className="btn-lantern flex-[2] px-4 py-3 text-lg"
-            onClick={() => {
-              setRound((r) => r + 1);
-              setView("round");
-            }}
-          >
-            Next night →
+          <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={advance}>
+            {isNight ? "Continue to day →" : `Begin night ${round + 1} →`}
           </button>
         )}
       </div>
