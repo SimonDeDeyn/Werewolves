@@ -237,6 +237,7 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
         <NoticeBoardStep
           board={board}
           moderatorName={moderatorName}
+          onEditCast={() => setStep("roles")}
           onRestart={deal}
           onReveal={() => setStep("reveal")}
         />
@@ -256,7 +257,12 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
       )}
 
       {step === "night" && (
-        <NightPhase assignments={assignments} board={board} onExit={onExit} />
+        <NightPhase
+          assignments={assignments}
+          board={board}
+          onExit={onExit}
+          onPlayAgain={() => setStep("moderator")}
+        />
       )}
     </div>
   );

@@ -4,11 +4,13 @@ import NoticeBoard, { type BoardItem } from "./NoticeBoard";
 export default function NoticeBoardStep({
   board,
   moderatorName,
+  onEditCast,
   onRestart,
   onReveal,
 }: {
   board: Assignment[];
   moderatorName: string | null;
+  onEditCast: () => void;
   onRestart: () => void;
   onReveal: () => void;
 }) {
@@ -37,11 +39,16 @@ export default function NoticeBoardStep({
         everyone can privately learn their own.
       </p>
 
-      <div className="flex gap-3">
-        <button className="btn-lantern flex-1 px-4 py-3" onClick={onRestart}>
-          Re-deal
-        </button>
-        <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={onReveal}>
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-3">
+          <button className="btn-lantern flex-1 px-4 py-3" onClick={onEditCast}>
+            ← Edit cast
+          </button>
+          <button className="btn-lantern flex-1 px-4 py-3" onClick={onRestart}>
+            Re-deal
+          </button>
+        </div>
+        <button className="btn-lantern px-4 py-3 text-lg" onClick={onReveal}>
           Begin the reveal →
         </button>
       </div>

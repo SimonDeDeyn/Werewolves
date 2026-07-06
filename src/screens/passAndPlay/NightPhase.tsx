@@ -17,10 +17,12 @@ export default function NightPhase({
   assignments,
   board,
   onExit,
+  onPlayAgain,
 }: {
   assignments: Assignment[];
   board: Assignment[];
   onExit: () => void;
+  onPlayAgain: () => void;
 }) {
   const players = useMemo(() => assignments.map((a) => a.player), [assignments]);
   const roleOf = useMemo(
@@ -159,13 +161,24 @@ export default function NightPhase({
       ) : null}
 
       <div className="flex gap-3">
-        <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
-          {result ? "Done" : "Quit"}
-        </button>
-        {!result && (
-          <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={advance}>
-            {isNight ? "Continue to day →" : `Begin night ${round + 1} →`}
-          </button>
+        {result ? (
+          <>
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
+              Main menu
+            </button>
+            <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={onPlayAgain}>
+              Play again →
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
+              Quit
+            </button>
+            <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={advance}>
+              {isNight ? "Continue to day →" : `Begin night ${round + 1} →`}
+            </button>
+          </>
         )}
       </div>
     </div>
