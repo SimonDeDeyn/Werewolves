@@ -60,6 +60,7 @@ Team accent to lean on: **village** = warm/hopeful greens & lantern-gold · **we
 - **Rabble-Rouser / Town Crier** (`rabble-rouser`) — Head: a loud crier mid-shout, hand cupped. · Card: a town crier ringing a great bell on the square, villagers turning to listen.
 - **Grandmother** (`grandmother`) — Head: a kindly old woman in a headscarf and spectacles. · Card: a grandmother at a spinning wheel leaving a knotted-thread clue, shawl over her shoulders.
 - **Rooster** (`rooster`) — Head: a farmer with a rooster crowing beside his head. · Card: a rooster crowing atop a fence at first light, mist burning off the village.
+- **Sleepwalker** (`sleepwalker`) — Head: a pale sleepwalking woman with half-closed eyes holding a candle. · Card: a sleepwalker in a pale nightgown drifting barefoot between moonlit cottages, candle in hand, eyes closed.
 
 ## Werewolf team
 

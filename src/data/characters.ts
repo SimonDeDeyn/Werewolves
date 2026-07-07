@@ -265,6 +265,17 @@ export const CHARACTERS: Character[] = [
     ability:
       "Each morning, crows to reveal general information (e.g. \"a wolf power was used last night\") without specifics.",
   },
+  {
+    id: "sleepwalker",
+    name: "Sleepwalker",
+    team: "village",
+    // Wakes last, after every other night role, so her reading reflects the
+    // whole night. Kept well above the current maximum to leave room.
+    nightOrder: 200,
+    description: "Never sleeps in her own bed — each night she wanders into someone else's.",
+    ability:
+      "Each night, visits another living player (never herself, never the same one two nights running). If the wolves attack her own house she survives; if they attack the player she visited, she dies alongside them. Each morning she privately learns only whether the player she visited used a night power that night — not what it was or which role they are; a powerless player \"slept peacefully\". The visited player never learns they were visited.",
+  },
 
   // ──────────────────────── Werewolf Team ────────────────────────
   {

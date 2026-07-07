@@ -308,6 +308,7 @@ export const MOTIFS: Record<string, ReactNode> = {
 /** Every character id → motif key. */
 export const MOTIF_BY_ID: Record<string, string> = {
   villager: "hood",
+  sleepwalker: "candle",
   seer: "eye",
   witch: "witch",
   hunter: "badge",
