@@ -248,6 +248,7 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
           assignments={assignments}
           canBeginNight={draft.moderatorMode === "player"}
           onBeginNight={() => setStep("night")}
+          onBack={() => setStep("board")}
           onReplay={() => {
             deal();
             setStep("board");
