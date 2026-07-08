@@ -200,9 +200,9 @@ export const CHARACTERS: Character[] = [
     team: "village",
     nightOrder: null,
     oncePerGame: true,
-    description: "Loyal to the end — even someone else's end.",
+    description: "Loyal to the end — happy to make it their own.",
     ability:
-      "Once per game, can swap fates with someone about to die, taking their role instead.",
+      "Once per game, can sacrifice themselves in place of a player condemned by the village vote, dying instead so the other is spared.",
   },
   {
     id: "gypsy",
@@ -264,6 +264,16 @@ export const CHARACTERS: Character[] = [
     description: "Crows at dawn with news the night tried to bury.",
     ability:
       "Each morning, crows to reveal general information (e.g. \"a wolf power was used last night\") without specifics.",
+  },
+  {
+    id: "devoted-servant",
+    name: "Devoted Servant",
+    team: "village",
+    nightOrder: null,
+    oncePerGame: true,
+    description: "Serves the dead more faithfully than the living.",
+    ability:
+      "Before a player condemned by the village vote is revealed, can reveal themselves to secretly take on that role instead, playing on in their place.",
   },
   {
     id: "sleepwalker",
@@ -377,16 +387,6 @@ export const CHARACTERS: Character[] = [
     nightOrder: 160,
     description: "A melody drifts through the village, and none who hear it are free.",
     ability: "Charms two players each night; wins alone if every player left alive is charmed.",
-  },
-  {
-    id: "devoted-servant",
-    name: "Devoted Servant",
-    team: "solo",
-    nightOrder: null,
-    oncePerGame: true,
-    description: "Serves the dead more faithfully than the living.",
-    ability:
-      "Before a dead player's role is publicly revealed, can reveal themselves to take on that role once.",
   },
   {
     id: "abominable-sectarian",
