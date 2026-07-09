@@ -14,7 +14,7 @@ type View = "wake" | "select" | "board";
  * walks the moderator through these in nightOrder (respecting firstNightOnly)
  * before the werewolves' victim is recorded. Grows as more roles are wired in.
  */
-const IMPLEMENTED_WAKE = new Set<string>(["cupid", "seer"]);
+const IMPLEMENTED_WAKE = new Set<string>(["cupid", "seer", "wild-child"]);
 
 /**
  * In-progress elimination resolution. The Servant and Devoted Servant may only
@@ -50,6 +50,8 @@ interface Snapshot {
   wakePicks: string[];
   wakeShown: boolean;
   lovers: string[];
+  roleModel: string | null;
+  turnedWolves: string[];
   pending: string[];
   lastDeaths: string[];
   lastNotes: string[];
@@ -107,6 +109,9 @@ export default function NightPhase({
 
   // Cupid's two lovers — if one dies, the other dies of heartbreak.
   const [lovers, setLovers] = useState<string[]>([]);
+  // Wild Child's role model, and any Wild Children who have turned werewolf.
+  const [roleModel, setRoleModel] = useState<string | null>(null);
+  const [turnedWolves, setTurnedWolves] = useState<string[]>([]);
   const [pending, setPending] = useState<string[]>([]);
   const [lastDeaths, setLastDeaths] = useState<string[]>([]);
   const [lastNotes, setLastNotes] = useState<string[]>([]);
@@ -151,6 +156,8 @@ export default function NightPhase({
     wakePicks,
     wakeShown,
     lovers,
+    roleModel,
+    turnedWolves,
     pending,
     lastDeaths,
     lastNotes,
@@ -179,6 +186,8 @@ export default function NightPhase({
     setWakePicks(prev.wakePicks);
     setWakeShown(prev.wakeShown);
     setLovers(prev.lovers);
+    setRoleModel(prev.roleModel);
+    setTurnedWolves(prev.turnedWolves);
     setPending(prev.pending);
     setLastDeaths(prev.lastDeaths);
     setLastNotes(prev.lastNotes);
@@ -199,9 +208,12 @@ export default function NightPhase({
 
   const roleOf = (p: string) => roleOverride[p] ?? baseRole[p];
   const roleName = (p: string) => byId(roleOf(p))?.name ?? "?";
+  // A Wild Child who turned counts as a werewolf even though their card is unchanged.
+  const teamOf = (p: string) =>
+    turnedWolves.includes(p) ? "werewolf" : byId(roleOf(p))?.team;
 
   const alive = players.filter((p) => !dead.includes(p));
-  const wolvesAlive = alive.filter((p) => byId(roleOf(p))?.team === "werewolf").length;
+  const wolvesAlive = alive.filter((p) => teamOf(p) === "werewolf").length;
   const result: "village" | "werewolf" | null =
     wolvesAlive === 0 ? "village" : wolvesAlive * 2 >= alive.length ? "werewolf" : null;
 
@@ -296,6 +308,23 @@ export default function NightPhase({
     // Lovers always fall together in the same round (see expandLovers).
     if (lovers.length === 2 && lovers.every((p) => r.deaths.includes(p))) {
       notes = [...notes, `${lovers[0]} and ${lovers[1]} were lovers — heartbreak takes them both.`];
+    }
+    // Wild Child: their role model's real death turns them werewolf.
+    if (roleModel && r.deaths.includes(roleModel)) {
+      const cubs = players.filter(
+        (p) =>
+          roleOf(p) === "wild-child" &&
+          !dead.includes(p) &&
+          !r.deaths.includes(p) &&
+          !turnedWolves.includes(p),
+      );
+      if (cubs.length) {
+        setTurnedWolves((w) => [...w, ...cubs]);
+        notes = [
+          ...notes,
+          `${cubs.join(" & ")}'s role model has fallen — the Wild Child turns werewolf.`,
+        ];
+      }
     }
     setLastNotes(notes);
     setRes(null);
@@ -463,6 +492,12 @@ export default function NightPhase({
   /** Cupid binds the two chosen players, then the sequence moves on. */
   const confirmCupid = () => {
     setLovers([...wakePicks]);
+    advanceWake();
+  };
+
+  /** Wild Child locks in their role model, then the sequence moves on. */
+  const confirmWildChild = () => {
+    if (wakePick) setRoleModel(wakePick);
     advanceWake();
   };
 
@@ -850,6 +885,48 @@ export default function NightPhase({
             {wakePicks.length === 2
               ? `Bind ${wakePicks[0]} & ${wakePicks[1]} →`
               : `Choose two lovers (${wakePicks.length}/2)`}
+          </button>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
+    // Wild Child — choose a role model whose death turns the child werewolf.
+    if (roleId === "wild-child") {
+      const targets = players.filter((p) => !dead.includes(p) && !holders.includes(p));
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Wild Child wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Choose their role model —
+            if that player ever dies, the Wild Child joins the wolves.
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {targets.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setWakePick(t)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  wakePick === t
+                    ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                    : "border-pine-600 text-moss-200 hover:border-moss-400"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <button
+            className="btn-lantern w-full max-w-sm px-4 py-3 text-lg"
+            disabled={!wakePick}
+            onClick={confirmWildChild}
+          >
+            {wakePick ? `Set ${wakePick} as role model →` : "Choose a role model"}
           </button>
           {undoRow}
           {referenceOverlay}
