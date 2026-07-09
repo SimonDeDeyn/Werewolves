@@ -2,6 +2,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { byTeam, TEAM_LABELS, type Character, type Team } from "../../data/characters";
 import CharacterPortrait from "../../components/CharacterPortrait";
 import {
+  eligibleMiddleCards,
+  randomMiddleCards,
   recommendedWolves,
   roleSlots,
   setupError,
@@ -142,6 +144,51 @@ export default function RoleSelectStep({
           </div>
         </section>
       ))}
+
+      {(draft.counts["thief"] ?? 0) > 0 && (
+        <section>
+          <h3 className="mb-2 border-b border-pine-600 pb-1 font-display text-sm tracking-[0.2em] text-moon-400 uppercase">
+            Thief's middle cards
+          </h3>
+          <p className="mb-2 text-xs text-moss-300 italic">
+            Two unused cards laid in the middle — on the first night the Thief may swap into one or
+            keep the Thief. Villager and Werewolf may repeat.
+          </p>
+          <div className="flex flex-col gap-2">
+            {[0, 1].map((i) => (
+              <select
+                key={i}
+                value={draft.middleCards[i] ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setDraft((prev) => {
+                    const mc = [...(prev.middleCards ?? [])];
+                    mc[i] = v;
+                    return { ...prev, middleCards: mc };
+                  });
+                }}
+                className="rounded-lg border border-pine-600 bg-night-800 px-3 py-2 text-moon-100 focus:border-moss-400 focus:outline-none"
+              >
+                <option value="">— pick card {i + 1} —</option>
+                {eligibleMiddleCards(draft.counts).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setDraft((prev) => ({ ...prev, middleCards: randomMiddleCards(prev.counts) }))
+              }
+              className="btn-lantern px-4 py-2 text-sm"
+            >
+              🎲 Randomize middle cards
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="sticky bottom-2 z-10 flex flex-col gap-2">
         {error && (

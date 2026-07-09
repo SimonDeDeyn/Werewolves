@@ -16,6 +16,11 @@ export interface SetupDraft {
   counts: Record<string, number>;
   /** Fill any leftover seats with random passive village roles. */
   randomize: boolean;
+  /**
+   * The two extra cards laid in the middle for the Thief to choose from.
+   * Only meaningful when a Thief is in the cast; otherwise ignored.
+   */
+  middleCards: string[];
 }
 
 export const emptyDraft = (): SetupDraft => ({
@@ -24,7 +29,26 @@ export const emptyDraft = (): SetupDraft => ({
   moderatorIndex: null,
   counts: {},
   randomize: false,
+  middleCards: [],
 });
+
+/**
+ * Roles eligible to sit in the middle for the Thief: cards NOT already dealt to
+ * a player, plus plain Villager/Werewolf which may always be duplicated.
+ */
+export function eligibleMiddleCards(counts: Record<string, number>): Character[] {
+  return CHARACTERS.filter(
+    (c) => c.id === "villager" || c.id === "werewolf" || (counts[c.id] ?? 0) === 0,
+  );
+}
+
+/** Two random distinct-ish eligible middle cards for the Thief. */
+export function randomMiddleCards(counts: Record<string, number>): string[] {
+  const pool = eligibleMiddleCards(counts);
+  if (pool.length < 2) return pool.map((c) => c.id);
+  const shuffled = shuffle(pool);
+  return [shuffled[0].id, shuffled[1].id];
+}
 
 /** Number of players who actually receive a role (moderator is excluded). */
 export function roleSlots(draft: SetupDraft): number {
@@ -74,6 +98,8 @@ export function setupError(draft: SetupDraft): string | null {
   const wolves = werewolfCount(draft.counts);
   if (wolves === 0) return "Add at least one werewolf.";
   if (wolves * 2 >= slots) return "Too many werewolves — the village can't win.";
+  if ((draft.counts["thief"] ?? 0) > 0 && draft.middleCards.filter(Boolean).length < 2)
+    return "Pick two middle cards for the Thief (or hit Randomize).";
   return null;
 }
 

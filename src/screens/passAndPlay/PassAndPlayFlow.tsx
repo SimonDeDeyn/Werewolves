@@ -261,6 +261,7 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
         <NightPhase
           assignments={assignments}
           board={board}
+          middleCards={draft.middleCards}
           onExit={onExit}
           onPlayAgain={() => setStep("moderator")}
         />

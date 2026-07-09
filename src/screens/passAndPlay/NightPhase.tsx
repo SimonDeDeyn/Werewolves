@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { byId, NIGHT_SEQUENCE } from "../../data/characters";
+import { byId, NIGHT_SEQUENCE, type Character } from "../../data/characters";
 import type { Assignment } from "../../game/setup";
 import CharacterPortrait from "../../components/CharacterPortrait";
 import PlayerCircle from "./PlayerCircle";
@@ -15,6 +15,7 @@ type View = "wake" | "select" | "board";
  * before the werewolves' victim is recorded. Grows as more roles are wired in.
  */
 const IMPLEMENTED_WAKE = new Set<string>([
+  "thief",
   "vile-doppelganger",
   "cupid",
   "seer",
@@ -83,11 +84,13 @@ interface Snapshot {
 export default function NightPhase({
   assignments,
   board,
+  middleCards = [],
   onExit,
   onPlayAgain,
 }: {
   assignments: Assignment[];
   board: Assignment[];
+  middleCards?: string[];
   onExit: () => void;
   onPlayAgain: () => void;
 }) {
@@ -519,6 +522,12 @@ export default function NightPhase({
     advanceWake();
   };
 
+  /** Thief swaps their card for one of the two middle cards, then moves on. */
+  const confirmThief = (thief: string, cardId: string) => {
+    setRoleOverride((o) => ({ ...o, [thief]: cardId }));
+    advanceWake();
+  };
+
   const isNight = phase === "night";
   const label = `${isNight ? "Night" : "Day"} ${round}`;
 
@@ -857,6 +866,45 @@ export default function NightPhase({
     const role = byId(roleId);
     const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === roleId);
     const holderLabel = holders.join(" & ");
+
+    // Thief — swap into one of the two middle cards, or keep the Thief
+    // (first night only). The board keeps their Thief card.
+    if (roleId === "thief") {
+      const thief = holders[0];
+      const cards = middleCards
+        .map((id) => byId(id))
+        .filter((c): c is Character => Boolean(c));
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Thief wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{thief}</span>. Two cards lie in the middle — they
+            may swap into one, or keep the Thief.
+          </p>
+          {referenceButtons}
+          <div className="flex flex-col items-center gap-5">
+            {cards.map((c, i) => (
+              <div key={i} className="flex flex-col items-center gap-2">
+                <GameCard character={c} initialFlipped />
+                <button
+                  className="btn-lantern px-5 py-2.5"
+                  onClick={() => confirmThief(thief, c.id)}
+                >
+                  Swap into the {c.name} →
+                </button>
+              </div>
+            ))}
+          </div>
+          <button className="btn-lantern px-6 py-3 text-lg" onClick={advanceWake}>
+            Keep the Thief →
+          </button>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
 
     // Vile Doppelgänger — copy a player's role (first night only). The board
     // keeps their Doppelgänger card; they play on secretly as the copied role.
