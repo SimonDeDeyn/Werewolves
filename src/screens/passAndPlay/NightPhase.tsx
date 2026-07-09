@@ -7,7 +7,14 @@ import NoticeBoard, { type BoardItem } from "./NoticeBoard";
 import GameCard from "../../components/GameCard";
 
 type Phase = "night" | "day";
-type View = "select" | "board";
+type View = "wake" | "select" | "board";
+
+/**
+ * Roles with an implemented night wake-up step. When a night begins the app
+ * walks the moderator through these in nightOrder (respecting firstNightOnly)
+ * before the werewolves' victim is recorded. Grows as more roles are wired in.
+ */
+const IMPLEMENTED_WAKE = new Set<string>(["seer"]);
 
 /**
  * In-progress elimination resolution. The Servant and Devoted Servant may only
@@ -38,6 +45,9 @@ interface Snapshot {
   round: number;
   phase: Phase;
   view: View;
+  wakeQueue: string[];
+  wakePick: string | null;
+  wakeShown: boolean;
   pending: string[];
   lastDeaths: string[];
   lastNotes: string[];
@@ -77,10 +87,20 @@ export default function NightPhase({
     [assignments],
   );
 
+  // Night-1 wake queue (roles that wake, are in play, and are implemented).
+  const initialWakeQueue = NIGHT_SEQUENCE.filter(
+    (c) => IMPLEMENTED_WAKE.has(c.id) && players.some((p) => baseRole[p] === c.id),
+  ).map((c) => c.id);
+
   const [dead, setDead] = useState<string[]>([]);
   const [round, setRound] = useState(1);
   const [phase, setPhase] = useState<Phase>("night");
-  const [view, setView] = useState<View>("select");
+  const [view, setView] = useState<View>(initialWakeQueue.length ? "wake" : "select");
+  // Roles still owed a wake-up prompt this night, in order.
+  const [wakeQueue, setWakeQueue] = useState<string[]>(initialWakeQueue);
+  // Per-step scratch for the current wake prompt (e.g. the Seer's chosen target).
+  const [wakePick, setWakePick] = useState<string | null>(null);
+  const [wakeShown, setWakeShown] = useState(false);
   const [pending, setPending] = useState<string[]>([]);
   const [lastDeaths, setLastDeaths] = useState<string[]>([]);
   const [lastNotes, setLastNotes] = useState<string[]>([]);
@@ -120,6 +140,9 @@ export default function NightPhase({
     round,
     phase,
     view,
+    wakeQueue,
+    wakePick,
+    wakeShown,
     pending,
     lastDeaths,
     lastNotes,
@@ -143,6 +166,9 @@ export default function NightPhase({
     setRound(prev.round);
     setPhase(prev.phase);
     setView(prev.view);
+    setWakeQueue(prev.wakeQueue);
+    setWakePick(prev.wakePick);
+    setWakeShown(prev.wakeShown);
     setPending(prev.pending);
     setLastDeaths(prev.lastDeaths);
     setLastNotes(prev.lastNotes);
@@ -380,6 +406,27 @@ export default function NightPhase({
 
   const toggle = (name: string) =>
     setPending((p) => (p.includes(name) ? p.filter((x) => x !== name) : [...p, name]));
+
+  /* --------------------------- Night wake-up ----------------------------- */
+
+  /** Implemented waking roles with a living holder, in order, for a given night. */
+  const wakeRolesFor = (rnd: number): string[] =>
+    NIGHT_SEQUENCE.filter(
+      (c) =>
+        IMPLEMENTED_WAKE.has(c.id) &&
+        (!c.firstNightOnly || rnd === 1) &&
+        players.some((p) => !dead.includes(p) && roleOf(p) === c.id),
+    ).map((c) => c.id);
+
+  /** Finish the current wake prompt and move to the next role, or the kill. */
+  const advanceWake = () => {
+    pushHistory();
+    const rest = wakeQueue.slice(1);
+    setWakeQueue(rest);
+    setWakePick(null);
+    setWakeShown(false);
+    if (!rest.length) setView("select");
+  };
 
   const isNight = phase === "night";
   const label = `${isNight ? "Night" : "Day"} ${round}`;
@@ -713,6 +760,93 @@ export default function NightPhase({
     );
   }
 
+  /* ---------------------------- Wake sequence ---------------------------- */
+  if (view === "wake" && wakeQueue.length) {
+    const roleId = wakeQueue[0];
+    const role = byId(roleId);
+    const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === roleId);
+    const holderLabel = holders.join(" & ");
+
+    // Seer — the moderator picks a player, then the app shows that player's card.
+    if (roleId === "seer") {
+      if (wakeShown && wakePick) {
+        const seen = byId(roleOf(wakePick));
+        return (
+          <div className="flex flex-col items-center gap-4 py-2 text-center">
+            <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+              {wakePick} is…
+            </h1>
+            <p className="max-w-sm text-sm text-moss-200">
+              Show this to the Seer, then hide it and send them back to sleep.
+            </p>
+            {seen && <GameCard character={seen} initialFlipped />}
+            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+              Done →
+            </button>
+            {undoRow}
+            {referenceOverlay}
+          </div>
+        );
+      }
+      const targets = players.filter((p) => !dead.includes(p) && !holders.includes(p));
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Seer wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Whose true face do they
+            wish to glimpse?
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {targets.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setWakePick(t)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  wakePick === t
+                    ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                    : "border-pine-600 text-moss-200 hover:border-moss-400"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="flex w-full max-w-sm gap-3">
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={advanceWake}>
+              Skip
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              disabled={!wakePick}
+              onClick={() => setWakeShown(true)}
+            >
+              {wakePick ? `Reveal ${wakePick}'s card →` : "Choose a player"}
+            </button>
+          </div>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
+    // Unknown/unhandled role — skip gracefully (shouldn't happen).
+    return (
+      <div className="flex flex-col items-center gap-4 py-6 text-center">
+        <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+          {role?.name ?? "A role"} wakes
+        </h1>
+        <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+          Continue →
+        </button>
+        {undoRow}
+      </div>
+    );
+  }
+
   /* --------------------------- Selection screen -------------------------- */
   if (view === "select") {
     return (
@@ -770,11 +904,15 @@ export default function NightPhase({
     pushHistory();
     if (phase === "night") {
       setPhase("day");
+      setView("select");
     } else {
+      const nextRound = round + 1;
       setPhase("night");
-      setRound((r) => r + 1);
+      setRound(nextRound);
+      const q = wakeRolesFor(nextRound);
+      setWakeQueue(q);
+      setView(q.length ? "wake" : "select");
     }
-    setView("select");
   };
 
   return (
