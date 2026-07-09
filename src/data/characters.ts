@@ -334,15 +334,6 @@ export const CHARACTERS: Character[] = [
       "Once per game, can turn the villager killed by the wolves into a new werewolf instead.",
   },
   {
-    id: "vile-doppelganger",
-    name: "Vile Doppelgänger",
-    team: "werewolf",
-    nightOrder: 15,
-    firstNightOnly: true,
-    description: "Wears a stolen face better than its own.",
-    ability: "Copies another player's role at the start of the game.",
-  },
-  {
     id: "traitor",
     name: "Traitor",
     team: "werewolf",
@@ -353,6 +344,15 @@ export const CHARACTERS: Character[] = [
   },
 
   // ────────────────────── Solo / Ambiguous ──────────────────────
+  {
+    id: "vile-doppelganger",
+    name: "Vile Doppelgänger",
+    team: "solo",
+    nightOrder: 15,
+    firstNightOnly: true,
+    description: "Wears a stolen face better than its own.",
+    ability: "Copies another player's role at the start of the game.",
+  },
   {
     id: "angel",
     name: "Angel",
