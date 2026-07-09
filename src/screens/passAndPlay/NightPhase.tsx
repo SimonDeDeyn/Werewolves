@@ -14,7 +14,12 @@ type View = "wake" | "select" | "board";
  * walks the moderator through these in nightOrder (respecting firstNightOnly)
  * before the werewolves' victim is recorded. Grows as more roles are wired in.
  */
-const IMPLEMENTED_WAKE = new Set<string>(["cupid", "seer", "wild-child"]);
+const IMPLEMENTED_WAKE = new Set<string>([
+  "vile-doppelganger",
+  "cupid",
+  "seer",
+  "wild-child",
+]);
 
 /**
  * In-progress elimination resolution. The Servant and Devoted Servant may only
@@ -56,6 +61,7 @@ interface Snapshot {
   lastDeaths: string[];
   lastNotes: string[];
   roleOverride: Record<string, string>;
+  revealedDead: string[];
   res: Resolution | null;
   resPick: string | null;
   servantChoosing: ServantRole | null;
@@ -116,8 +122,11 @@ export default function NightPhase({
   const [lastDeaths, setLastDeaths] = useState<string[]>([]);
   const [lastNotes, setLastNotes] = useState<string[]>([]);
 
-  // A Devoted Servant who takes over re-points their player to a new role.
+  // A Devoted Servant / Doppelgänger re-points their player to a new secret role.
   const [roleOverride, setRoleOverride] = useState<Record<string, string>>({});
+  // Players shown fallen on the board under their own card despite playing on
+  // in secret (the Devoted Servant). The Doppelgänger stays alive, so is absent.
+  const [revealedDead, setRevealedDead] = useState<string[]>([]);
 
   // Elder's death by the village vote strips every villager of their powers.
   const [powersDisabled, setPowersDisabled] = useState(false);
@@ -162,6 +171,7 @@ export default function NightPhase({
     lastDeaths,
     lastNotes,
     roleOverride,
+    revealedDead,
     res,
     resPick,
     servantChoosing,
@@ -192,6 +202,7 @@ export default function NightPhase({
     setLastDeaths(prev.lastDeaths);
     setLastNotes(prev.lastNotes);
     setRoleOverride(prev.roleOverride);
+    setRevealedDead(prev.revealedDead);
     setRes(prev.res);
     setResPick(prev.resPick);
     setServantChoosing(prev.servantChoosing);
@@ -218,15 +229,15 @@ export default function NightPhase({
     wolvesAlive === 0 ? "village" : wolvesAlive * 2 >= alive.length ? "werewolf" : null;
 
   const boardItems: BoardItem[] = board.map((a) => {
-    // A Devoted Servant who took over a role stays alive under the hood, but
-    // the board must still show them as fallen — under their own old identity,
-    // never the role they secretly took on.
-    const tookOver = roleOverride[a.player] !== undefined;
-    const isDead = dead.includes(a.player) || tookOver;
+    // A Devoted Servant / Doppelgänger keeps their ORIGINAL card on the board,
+    // never the secret role they took on. The Servant also shows as fallen
+    // (they revealed and "left"); the Doppelgänger plays on visibly alive.
+    const overridden = roleOverride[a.player] !== undefined;
+    const shownDead = dead.includes(a.player) || revealedDead.includes(a.player);
     return {
-      characterId: tookOver ? baseRole[a.player] : roleOf(a.player),
-      hidden: a.random && !isDead,
-      dead: isDead,
+      characterId: overridden ? baseRole[a.player] : roleOf(a.player),
+      hidden: a.random && !shownDead,
+      dead: shownDead,
     };
   });
 
@@ -441,6 +452,7 @@ export default function NightPhase({
     pushHistory();
     const { servant, target } = devotedReveal;
     setRoleOverride((o) => ({ ...o, [servant]: roleOf(target) }));
+    setRevealedDead((r) => [...r, servant]); // shown fallen on the board
     setDevotedReveal(null);
     step({
       ...res,
@@ -498,6 +510,12 @@ export default function NightPhase({
   /** Wild Child locks in their role model, then the sequence moves on. */
   const confirmWildChild = () => {
     if (wakePick) setRoleModel(wakePick);
+    advanceWake();
+  };
+
+  /** Vile Doppelgänger secretly copies a player's role, then moves on. */
+  const confirmDoppelganger = (doppel: string, target: string) => {
+    setRoleOverride((o) => ({ ...o, [doppel]: roleOf(target) }));
     advanceWake();
   };
 
@@ -839,6 +857,77 @@ export default function NightPhase({
     const role = byId(roleId);
     const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === roleId);
     const holderLabel = holders.join(" & ");
+
+    // Vile Doppelgänger — copy a player's role (first night only). The board
+    // keeps their Doppelgänger card; they play on secretly as the copied role.
+    if (roleId === "vile-doppelganger") {
+      const doppel = holders[0];
+      if (wakeShown && wakePick) {
+        const seen = byId(roleOf(wakePick));
+        return (
+          <div className="flex flex-col items-center gap-4 py-2 text-center">
+            <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+              {wakePick} is…
+            </h1>
+            <p className="max-w-sm text-sm text-moss-200">
+              <span className="text-moon-100">{doppel}</span> studies this card and takes on the
+              role — but stays the Doppelgänger to the village.
+            </p>
+            {seen && <GameCard character={seen} initialFlipped />}
+            <button
+              className="btn-lantern px-6 py-3.5 text-lg"
+              onClick={() => confirmDoppelganger(doppel, wakePick)}
+            >
+              Become the {seen?.name} →
+            </button>
+            {undoRow}
+            {referenceOverlay}
+          </div>
+        );
+      }
+      const targets = players.filter((p) => !dead.includes(p) && !holders.includes(p));
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Vile Doppelgänger wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Whose role will they steal?
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {targets.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setWakePick(t)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  wakePick === t
+                    ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                    : "border-pine-600 text-moss-200 hover:border-moss-400"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="flex w-full max-w-sm gap-3">
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={advanceWake}>
+              Skip
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              disabled={!wakePick}
+              onClick={() => setWakeShown(true)}
+            >
+              {wakePick ? `Reveal ${wakePick}'s card →` : "Choose a player"}
+            </button>
+          </div>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
 
     // Cupid — bind two players as lovers (first night only).
     if (roleId === "cupid") {
