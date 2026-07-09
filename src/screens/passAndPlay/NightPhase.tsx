@@ -20,6 +20,8 @@ const IMPLEMENTED_WAKE = new Set<string>([
   "cupid",
   "seer",
   "wild-child",
+  "pyromaniac",
+  "piper",
 ]);
 
 /**
@@ -58,6 +60,9 @@ interface Snapshot {
   lovers: string[];
   roleModel: string | null;
   turnedWolves: string[];
+  soaked: string[];
+  charmed: string[];
+  pendingBurn: string[];
   pending: string[];
   lastDeaths: string[];
   lastNotes: string[];
@@ -121,6 +126,11 @@ export default function NightPhase({
   // Wild Child's role model, and any Wild Children who have turned werewolf.
   const [roleModel, setRoleModel] = useState<string | null>(null);
   const [turnedWolves, setTurnedWolves] = useState<string[]>([]);
+  // Pyromaniac's soaked houses and Piper's charmed players (solo win tracking).
+  const [soaked, setSoaked] = useState<string[]>([]);
+  const [charmed, setCharmed] = useState<string[]>([]);
+  // Soaked houses the Pyromaniac ignited this night — burned in at record time.
+  const [pendingBurn, setPendingBurn] = useState<string[]>([]);
   const [pending, setPending] = useState<string[]>([]);
   const [lastDeaths, setLastDeaths] = useState<string[]>([]);
   const [lastNotes, setLastNotes] = useState<string[]>([]);
@@ -170,6 +180,9 @@ export default function NightPhase({
     lovers,
     roleModel,
     turnedWolves,
+    soaked,
+    charmed,
+    pendingBurn,
     pending,
     lastDeaths,
     lastNotes,
@@ -201,6 +214,9 @@ export default function NightPhase({
     setLovers(prev.lovers);
     setRoleModel(prev.roleModel);
     setTurnedWolves(prev.turnedWolves);
+    setSoaked(prev.soaked);
+    setCharmed(prev.charmed);
+    setPendingBurn(prev.pendingBurn);
     setPending(prev.pending);
     setLastDeaths(prev.lastDeaths);
     setLastNotes(prev.lastNotes);
@@ -228,8 +244,21 @@ export default function NightPhase({
 
   const alive = players.filter((p) => !dead.includes(p));
   const wolvesAlive = alive.filter((p) => teamOf(p) === "werewolf").length;
-  const result: "village" | "werewolf" | null =
-    wolvesAlive === 0 ? "village" : wolvesAlive * 2 >= alive.length ? "werewolf" : null;
+  const result: "village" | "werewolf" | "pyromaniac" | "piper" | null = (() => {
+    const pyros = alive.filter((p) => roleOf(p) === "pyromaniac");
+    const pipers = alive.filter((p) => roleOf(p) === "piper");
+    // Piper wins the moment every other living player is charmed.
+    if (pipers.length) {
+      const others = alive.filter((p) => !pipers.includes(p));
+      if (others.length > 0 && others.every((p) => charmed.includes(p))) return "piper";
+    }
+    // Pyromaniac wins as the last soul standing.
+    if (pyros.length && alive.every((p) => roleOf(p) === "pyromaniac")) return "pyromaniac";
+    if (wolvesAlive > 0 && wolvesAlive * 2 >= alive.length) return "werewolf";
+    // The village prevails only once no wolves and no solo threats remain.
+    if (wolvesAlive === 0 && !pyros.length && !pipers.length) return "village";
+    return null;
+  })();
 
   const boardItems: BoardItem[] = board.map((a) => {
     // A Devoted Servant / Doppelgänger keeps their ORIGINAL card on the board,
@@ -375,6 +404,19 @@ export default function NightPhase({
         );
       }
       if (infectedPending.length) setInfectedPending([]);
+
+      // Houses the Pyromaniac set alight this night burn down now.
+      const burn = pendingBurn.filter((p) => !dead.includes(p) && !deaths.includes(p));
+      if (burn.length) {
+        deaths = [...deaths, ...burn];
+        burn.forEach((p) =>
+          notes.push(`${p} — the ${roleName(p)} — burns in the Pyromaniac's fire.`),
+        );
+      }
+      if (pendingBurn.length) {
+        setPendingBurn([]);
+        setSoaked([]);
+      }
 
       if (!powersDisabled) {
         // The Elder secretly shrugs off the wolves' first attack.
@@ -525,6 +567,24 @@ export default function NightPhase({
   /** Thief swaps their card for one of the two middle cards, then moves on. */
   const confirmThief = (thief: string, cardId: string) => {
     setRoleOverride((o) => ({ ...o, [thief]: cardId }));
+    advanceWake();
+  };
+
+  /** Pyromaniac douses the picked houses in oil, then moves on. */
+  const confirmSoak = () => {
+    setSoaked((s) => [...s, ...wakePicks]);
+    advanceWake();
+  };
+
+  /** Pyromaniac ignites — every living soaked house burns in this night's toll. */
+  const confirmIgnite = () => {
+    setPendingBurn(soaked.filter((p) => !dead.includes(p)));
+    advanceWake();
+  };
+
+  /** Piper charms the picked players, then moves on. */
+  const confirmCharm = () => {
+    setCharmed((c) => [...c, ...wakePicks]);
     advanceWake();
   };
 
@@ -1137,6 +1197,145 @@ export default function NightPhase({
       );
     }
 
+    // Pyromaniac — soak up to 2 houses (max 6), or ignite all soaked houses.
+    if (roleId === "pyromaniac") {
+      const livingSoaked = soaked.filter((p) => !dead.includes(p));
+      const remaining = Math.min(2, 6 - soaked.length);
+      const soakable = players.filter(
+        (p) => !dead.includes(p) && !soaked.includes(p) && !holders.includes(p),
+      );
+      const toggleSoak = (name: string) =>
+        setWakePicks((ps) =>
+          ps.includes(name)
+            ? ps.filter((x) => x !== name)
+            : ps.length < remaining
+              ? [...ps, name]
+              : ps,
+        );
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Pyromaniac wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>.{" "}
+            {remaining > 0
+              ? `Douse up to ${remaining} more house${remaining === 1 ? "" : "s"} in oil (max 6)`
+              : "All six houses are soaked"}
+            , or set the soaked houses alight.
+          </p>
+          {referenceButtons}
+          {soaked.length > 0 && (
+            <p className="text-xs text-moss-300">Soaked: {livingSoaked.join(", ") || "—"}</p>
+          )}
+          {remaining > 0 && (
+            <div className="flex flex-wrap justify-center gap-2">
+              {soakable.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => toggleSoak(t)}
+                  className={`rounded-full border px-3 py-1.5 text-sm ${
+                    wakePicks.includes(t)
+                      ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                      : "border-pine-600 text-moss-200 hover:border-moss-400"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex w-full max-w-sm flex-col gap-3">
+            <button
+              className="btn-lantern px-4 py-3 text-lg"
+              disabled={!wakePicks.length}
+              onClick={confirmSoak}
+            >
+              {wakePicks.length
+                ? `Soak ${wakePicks.length} house${wakePicks.length === 1 ? "" : "s"} →`
+                : "Douse houses in oil"}
+            </button>
+            {livingSoaked.length > 0 && (
+              <button
+                className="rounded-lg border border-blood-500 bg-blood-700/30 px-4 py-3 text-lg text-moon-100 hover:bg-blood-700/50"
+                onClick={confirmIgnite}
+              >
+                🔥 Ignite {livingSoaked.length} soaked house{livingSoaked.length === 1 ? "" : "s"} →
+              </button>
+            )}
+            <button className="btn-lantern px-4 py-2" onClick={advanceWake}>
+              Do nothing tonight
+            </button>
+          </div>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
+    // Piper — charm up to two players; wins when every living player is charmed.
+    if (roleId === "piper") {
+      const charmable = players.filter(
+        (p) => !dead.includes(p) && !charmed.includes(p) && !holders.includes(p),
+      );
+      const toggleCharm = (name: string) =>
+        setWakePicks((ps) =>
+          ps.includes(name)
+            ? ps.filter((x) => x !== name)
+            : ps.length < 2
+              ? [...ps, name]
+              : ps,
+        );
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Piper wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Charm up to two players —
+            win alone once every living player is under the spell.
+          </p>
+          {referenceButtons}
+          {charmed.length > 0 && (
+            <p className="text-xs text-moss-300">
+              Charmed: {charmed.filter((p) => !dead.includes(p)).join(", ") || "—"}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-center gap-2">
+            {charmable.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleCharm(t)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  wakePicks.includes(t)
+                    ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                    : "border-pine-600 text-moss-200 hover:border-moss-400"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="flex w-full max-w-sm gap-3">
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={advanceWake}>
+              Skip
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              disabled={!wakePicks.length}
+              onClick={confirmCharm}
+            >
+              {wakePicks.length ? `Charm ${wakePicks.length} →` : "Charm players"}
+            </button>
+          </div>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
     // Unknown/unhandled role — skip gracefully (shouldn't happen).
     return (
       <div className="flex flex-col items-center gap-4 py-6 text-center">
@@ -1167,6 +1366,8 @@ export default function NightPhase({
           players={players}
           dead={dead}
           selected={pending}
+          soaked={soaked}
+          charmed={charmed}
           onToggle={toggle}
           centerLabel={label}
         />
@@ -1252,17 +1453,28 @@ export default function NightPhase({
         <div
           className="rounded-lg border p-4 text-center"
           style={{
-            borderColor: result === "village" ? "#557a5c" : "#93392f",
+            borderColor:
+              result === "village" ? "#557a5c" : result === "werewolf" ? "#93392f" : "#8a6d3b",
             background: "rgba(10,18,12,0.6)",
           }}
         >
           <p className="font-display text-xl font-bold tracking-wider text-moon-100">
-            {result === "village" ? "The village survives" : "The werewolves win"}
+            {result === "village"
+              ? "The village survives"
+              : result === "werewolf"
+                ? "The werewolves win"
+                : result === "pyromaniac"
+                  ? "The Pyromaniac wins"
+                  : "The Piper wins"}
           </p>
           <p className="mt-1 text-sm text-moss-200">
             {result === "village"
               ? "Every werewolf has been eliminated."
-              : "The wolves now equal or outnumber the village."}
+              : result === "werewolf"
+                ? "The wolves now equal or outnumber the village."
+                : result === "pyromaniac"
+                  ? "Only the arsonist is left amid the ashes."
+                  : "Every soul left alive dances to the Piper's tune."}
           </p>
         </div>
       ) : null}

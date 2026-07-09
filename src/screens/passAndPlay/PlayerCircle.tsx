@@ -7,12 +7,18 @@ export default function PlayerCircle({
   players,
   dead,
   selected = [],
+  soaked = [],
+  charmed = [],
   onToggle,
   centerLabel,
 }: {
   players: string[];
   dead: string[];
   selected?: string[];
+  /** Pyromaniac's oil-soaked houses — badged with a flame. */
+  soaked?: string[];
+  /** Piper's charmed players — badged with a music note. */
+  charmed?: string[];
   onToggle?: (name: string) => void;
   centerLabel?: string;
 }) {
@@ -36,6 +42,8 @@ export default function PlayerCircle({
         const y = 50 + 38 * Math.sin(angle);
         const isDead = dead.includes(name);
         const isSel = selected.includes(name);
+        const isSoaked = soaked.includes(name) && !isDead;
+        const isCharmed = charmed.includes(name) && !isDead;
         const interactive = !!onToggle && !isDead;
 
         return (
@@ -66,6 +74,11 @@ export default function PlayerCircle({
                   <line x1="7" y1="8" x2="33" y2="32" stroke="#b3271e" strokeWidth="3.5" strokeLinecap="round" />
                   <line x1="33" y1="8" x2="7" y2="32" stroke="#b3271e" strokeWidth="3.5" strokeLinecap="round" />
                 </svg>
+              )}
+              {(isSoaked || isCharmed) && (
+                <span className="pointer-events-none absolute -top-1.5 -right-1.5 grid h-4 w-4 place-items-center rounded-full bg-night-950 text-[0.6rem] leading-none ring-1 ring-pine-500">
+                  {isSoaked ? "🔥" : "🎵"}
+                </span>
               )}
             </span>
             <span
