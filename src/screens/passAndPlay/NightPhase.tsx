@@ -14,7 +14,7 @@ type View = "wake" | "select" | "board";
  * walks the moderator through these in nightOrder (respecting firstNightOnly)
  * before the werewolves' victim is recorded. Grows as more roles are wired in.
  */
-const IMPLEMENTED_WAKE = new Set<string>(["seer"]);
+const IMPLEMENTED_WAKE = new Set<string>(["cupid", "seer"]);
 
 /**
  * In-progress elimination resolution. The Servant and Devoted Servant may only
@@ -47,7 +47,9 @@ interface Snapshot {
   view: View;
   wakeQueue: string[];
   wakePick: string | null;
+  wakePicks: string[];
   wakeShown: boolean;
+  lovers: string[];
   pending: string[];
   lastDeaths: string[];
   lastNotes: string[];
@@ -100,7 +102,11 @@ export default function NightPhase({
   const [wakeQueue, setWakeQueue] = useState<string[]>(initialWakeQueue);
   // Per-step scratch for the current wake prompt (e.g. the Seer's chosen target).
   const [wakePick, setWakePick] = useState<string | null>(null);
+  const [wakePicks, setWakePicks] = useState<string[]>([]);
   const [wakeShown, setWakeShown] = useState(false);
+
+  // Cupid's two lovers — if one dies, the other dies of heartbreak.
+  const [lovers, setLovers] = useState<string[]>([]);
   const [pending, setPending] = useState<string[]>([]);
   const [lastDeaths, setLastDeaths] = useState<string[]>([]);
   const [lastNotes, setLastNotes] = useState<string[]>([]);
@@ -142,7 +148,9 @@ export default function NightPhase({
     view,
     wakeQueue,
     wakePick,
+    wakePicks,
     wakeShown,
+    lovers,
     pending,
     lastDeaths,
     lastNotes,
@@ -168,7 +176,9 @@ export default function NightPhase({
     setView(prev.view);
     setWakeQueue(prev.wakeQueue);
     setWakePick(prev.wakePick);
+    setWakePicks(prev.wakePicks);
     setWakeShown(prev.wakeShown);
+    setLovers(prev.lovers);
     setPending(prev.pending);
     setLastDeaths(prev.lastDeaths);
     setLastNotes(prev.lastNotes);
@@ -217,6 +227,8 @@ export default function NightPhase({
         !dead.includes(p) &&
         !r.deaths.includes(p) &&
         !r.usedServants.includes(p) &&
+        // A servant bound by Cupid loves too deeply to serve anyone else.
+        !lovers.includes(p) &&
         roleOf(p) === roleId,
     ) ?? null;
 
@@ -259,6 +271,19 @@ export default function NightPhase({
     return null;
   };
 
+  /** Cupid: a lover's death drags their partner along by heartbreak. */
+  const expandLovers = (deaths: string[]): string[] => {
+    if (lovers.length !== 2) return deaths;
+    const [a, b] = lovers;
+    const out = [...deaths];
+    const pull = (x: string) => {
+      if (!out.includes(x) && !dead.includes(x)) out.push(x);
+    };
+    if (out.includes(a)) pull(b);
+    if (out.includes(b)) pull(a);
+    return out;
+  };
+
   const commit = (r: Resolution) => {
     setDead((d) => [...d, ...r.deaths]);
     setLastDeaths(r.deaths);
@@ -268,6 +293,10 @@ export default function NightPhase({
       setPowersDisabled(true);
       notes = [...notes, "The Elder dies by the village's hand — every villager power is undone."];
     }
+    // Lovers always fall together in the same round (see expandLovers).
+    if (lovers.length === 2 && lovers.every((p) => r.deaths.includes(p))) {
+      notes = [...notes, `${lovers[0]} and ${lovers[1]} were lovers — heartbreak takes them both.`];
+    }
     setLastNotes(notes);
     setRes(null);
     setResPick(null);
@@ -275,11 +304,13 @@ export default function NightPhase({
   };
 
   const step = (r: Resolution) => {
-    if (nextPrompt(r)) {
-      setRes(r);
+    const deaths = expandLovers(r.deaths);
+    const rr = deaths.length === r.deaths.length ? r : { ...r, deaths };
+    if (nextPrompt(rr)) {
+      setRes(rr);
       setResPick(null);
     } else {
-      commit(r);
+      commit(rr);
     }
   };
 
@@ -424,8 +455,15 @@ export default function NightPhase({
     const rest = wakeQueue.slice(1);
     setWakeQueue(rest);
     setWakePick(null);
+    setWakePicks([]);
     setWakeShown(false);
     if (!rest.length) setView("select");
+  };
+
+  /** Cupid binds the two chosen players, then the sequence moves on. */
+  const confirmCupid = () => {
+    setLovers([...wakePicks]);
+    advanceWake();
   };
 
   const isNight = phase === "night";
@@ -766,6 +804,58 @@ export default function NightPhase({
     const role = byId(roleId);
     const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === roleId);
     const holderLabel = holders.join(" & ");
+
+    // Cupid — bind two players as lovers (first night only).
+    if (roleId === "cupid") {
+      const living = players.filter((p) => !dead.includes(p));
+      const toggleLover = (name: string) =>
+        setWakePicks((ps) =>
+          ps.includes(name)
+            ? ps.filter((x) => x !== name)
+            : ps.length < 2
+              ? [...ps, name]
+              : ps,
+        );
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            Cupid wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Choose two players to fall
+            in love — if one dies, the other dies of heartbreak.
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {living.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleLover(t)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  wakePicks.includes(t)
+                    ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                    : "border-pine-600 text-moss-200 hover:border-moss-400"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <button
+            className="btn-lantern w-full max-w-sm px-4 py-3 text-lg"
+            disabled={wakePicks.length !== 2}
+            onClick={confirmCupid}
+          >
+            {wakePicks.length === 2
+              ? `Bind ${wakePicks[0]} & ${wakePicks[1]} →`
+              : `Choose two lovers (${wakePicks.length}/2)`}
+          </button>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
 
     // Seer — the moderator picks a player, then the app shows that player's card.
     if (roleId === "seer") {
