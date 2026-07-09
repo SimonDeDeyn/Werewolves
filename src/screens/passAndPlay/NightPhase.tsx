@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { byId } from "../../data/characters";
+import { byId, NIGHT_SEQUENCE } from "../../data/characters";
 import type { Assignment } from "../../game/setup";
+import CharacterPortrait from "../../components/CharacterPortrait";
 import PlayerCircle from "./PlayerCircle";
 import NoticeBoard, { type BoardItem } from "./NoticeBoard";
 import GameCard from "../../components/GameCard";
@@ -50,6 +51,7 @@ interface Snapshot {
   princeUsed: string[];
   idiotSpared: string[];
   elderSurvived: string[];
+  judgeUsed: boolean;
 }
 
 /**
@@ -94,6 +96,11 @@ export default function NightPhase({
   const [princeUsed, setPrinceUsed] = useState<string[]>([]);
   const [idiotSpared, setIdiotSpared] = useState<string[]>([]);
   const [elderSurvived, setElderSurvived] = useState<string[]>([]);
+  // The Stuttering Judge's one-time second vote (called from the day board).
+  const [judgeUsed, setJudgeUsed] = useState(false);
+
+  // Read-only moderator reference overlay: night wake order or the full roster.
+  const [reference, setReference] = useState<"wake" | "roster" | null>(null);
 
   const [res, setRes] = useState<Resolution | null>(null);
   const [resPick, setResPick] = useState<string | null>(null);
@@ -126,6 +133,7 @@ export default function NightPhase({
     princeUsed,
     idiotSpared,
     elderSurvived,
+    judgeUsed,
   });
   const pushHistory = () => setHistory((h) => [...h, snapshot()]);
   const undo = () => {
@@ -148,6 +156,7 @@ export default function NightPhase({
     setPrinceUsed(prev.princeUsed);
     setIdiotSpared(prev.idiotSpared);
     setElderSurvived(prev.elderSurvived);
+    setJudgeUsed(prev.judgeUsed);
     setHistory((h) => h.slice(0, -1));
   };
   const canUndo = history.length > 0;
@@ -388,6 +397,138 @@ export default function NightPhase({
     </div>
   ) : null;
 
+  /** Stuttering Judge secretly forces a second vote on the same day. */
+  const judgeAvailable =
+    !isNight &&
+    !powersDisabled &&
+    !judgeUsed &&
+    players.some((p) => !dead.includes(p) && roleOf(p) === "stuttering-judge");
+  const secondVote = () => {
+    pushHistory();
+    setJudgeUsed(true);
+    setPending([]);
+    setView("select"); // stay on the same day, run another vote
+  };
+
+  /* -------------------- Moderator reference overlays --------------------- */
+  // Only the roles actually in play, in wake-up order.
+  const wakingRoles = NIGHT_SEQUENCE.filter((c) =>
+    players.some((p) => roleOf(p) === c.id),
+  );
+  const referenceButtons = (
+    <div className="flex justify-center gap-2">
+      <button
+        type="button"
+        onClick={() => setReference("wake")}
+        className="rounded-full border border-pine-600 px-3 py-1 text-xs text-moss-300 hover:border-moss-400 hover:text-moon-100"
+      >
+        ☾ Wake order
+      </button>
+      <button
+        type="button"
+        onClick={() => setReference("roster")}
+        className="rounded-full border border-pine-600 px-3 py-1 text-xs text-moss-300 hover:border-moss-400 hover:text-moon-100"
+      >
+        ☰ Roster
+      </button>
+    </div>
+  );
+  const referenceOverlay = reference ? (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={() => setReference(null)}
+    >
+      <div
+        className="panel flex max-h-[82vh] w-full max-w-sm flex-col p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex gap-2">
+          {(["wake", "roster"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setReference(tab)}
+              className={`flex-1 rounded-full border px-3 py-1.5 text-sm ${
+                reference === tab
+                  ? "border-moon-200 bg-pine-500 text-moon-100"
+                  : "border-pine-600 text-moss-300 hover:border-moss-400"
+              }`}
+            >
+              {tab === "wake" ? "Wake order" : "Roster"}
+            </button>
+          ))}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {reference === "wake" ? (
+            <ol className="flex flex-col gap-2">
+              {wakingRoles.length ? (
+                wakingRoles.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center gap-3 rounded-lg border border-pine-600 bg-night-800/40 px-3 py-2"
+                  >
+                    <CharacterPortrait character={c} className="h-9 w-9 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-display text-sm text-moon-100">{c.name}</p>
+                      {c.firstNightOnly && (
+                        <p className="text-[0.6rem] tracking-widest text-moss-300 uppercase">
+                          First night only
+                        </p>
+                      )}
+                    </div>
+                    <span className="font-display text-xs text-moss-400">#{c.nightOrder}</span>
+                  </li>
+                ))
+              ) : (
+                <p className="text-center text-sm text-moss-300">No roles wake at night.</p>
+              )}
+            </ol>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {players.map((p) => {
+                const c = byId(roleOf(p));
+                const isDead = dead.includes(p);
+                return (
+                  <li
+                    key={p}
+                    className="flex items-center gap-3 rounded-lg border border-pine-600 bg-night-800/40 px-3 py-2"
+                  >
+                    {c && (
+                      <CharacterPortrait
+                        character={c}
+                        className={`h-9 w-9 shrink-0 ${isDead ? "opacity-50" : ""}`}
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={`truncate font-display text-sm ${
+                          isDead ? "text-moss-400 line-through" : "text-moon-100"
+                        }`}
+                      >
+                        {p}
+                      </p>
+                      <p className="truncate text-xs text-moss-300">{c?.name ?? "?"}</p>
+                    </div>
+                    {isDead && <span className="text-xs text-blood-500">dead</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="btn-lantern mt-3 w-full px-4 py-2"
+          onClick={() => setReference(null)}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   /* ----------------------------- Resolve view ---------------------------- */
   if (res) {
     // Devoted Servant's private reveal comes before the swap is finalised.
@@ -577,6 +718,7 @@ export default function NightPhase({
     return (
       <div className="flex flex-col items-center gap-4">
         <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">{label}</h1>
+        {referenceButtons}
         <p className="max-w-sm text-center text-sm text-moss-200">
           {isNight
             ? "The werewolves stalk the village. Tap tonight's victim."
@@ -614,6 +756,7 @@ export default function NightPhase({
           </button>
         </div>
         {undoRow}
+        {referenceOverlay}
       </div>
     );
   }
@@ -658,6 +801,7 @@ export default function NightPhase({
             ))}
           </div>
         )}
+        <div className="mt-3">{referenceButtons}</div>
       </div>
 
       <NoticeBoard items={boardItems} />
@@ -681,6 +825,15 @@ export default function NightPhase({
         </div>
       ) : null}
 
+      {judgeAvailable && !result && (
+        <button
+          className="btn-lantern w-full px-4 py-2.5 text-sm"
+          onClick={secondVote}
+        >
+          ⚖ Stuttering Judge: call a second vote →
+        </button>
+      )}
+
       <div className="flex gap-3">
         {result ? (
           <>
@@ -703,6 +856,7 @@ export default function NightPhase({
         )}
       </div>
       {undoRow}
+      {referenceOverlay}
     </div>
   );
 }

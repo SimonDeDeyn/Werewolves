@@ -41,6 +41,8 @@ function RoleBar({
   onInc: () => void;
   onDec: () => void;
 }) {
+  const group = character.groupSize ?? 1;
+  const wakes = character.nightOrder !== null ? "wakes at night" : "passive";
   return (
     <div
       className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${
@@ -51,7 +53,7 @@ function RoleBar({
       <div className="min-w-0 flex-1">
         <p className="truncate font-display text-sm text-moon-100">{character.name}</p>
         <p className="truncate text-[0.65rem] tracking-wide text-moss-300 uppercase">
-          {character.nightOrder !== null ? "wakes at night" : "passive"}
+          {group > 1 ? `${group} seats · ${wakes}` : wakes}
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -133,8 +135,8 @@ export default function RoleSelectStep({
                 key={c.id}
                 character={c}
                 count={draft.counts[c.id] ?? 0}
-                onInc={() => bump(c.id, 1)}
-                onDec={() => bump(c.id, -1)}
+                onInc={() => bump(c.id, c.groupSize ?? 1)}
+                onDec={() => bump(c.id, -(c.groupSize ?? 1))}
               />
             ))}
           </div>

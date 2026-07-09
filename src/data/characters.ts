@@ -25,6 +25,12 @@ export interface Character {
   oncePerGame?: boolean;
   /** Maximum copies of this role in one game (default 1). */
   maxCount?: number;
+  /**
+   * Roles dealt as a fixed block (Two Sisters, Three Brothers): adding the role
+   * consumes this many seats at once and deals that many identical cards.
+   * Defaults to 1 (an ordinary single-seat role).
+   */
+  groupSize?: number;
   /** Flavour text shown to players. */
   description: string;
   /** Short mechanical summary used by the narrator engine and compendium. */
@@ -155,6 +161,7 @@ export const CHARACTERS: Character[] = [
     team: "village",
     nightOrder: 60,
     maxCount: 2,
+    groupSize: 2,
     description: "Bound by blood, they trust no one but each other.",
     ability: "Know each other's identity and may communicate silently at night.",
   },
@@ -164,6 +171,7 @@ export const CHARACTERS: Character[] = [
     team: "village",
     nightOrder: 65,
     maxCount: 3,
+    groupSize: 3,
     description: "Three sons of the village, thick as the forest itself.",
     ability: "Know each other's identity and may communicate silently at night.",
   },
