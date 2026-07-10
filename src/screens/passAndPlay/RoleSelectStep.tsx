@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { byTeam, TEAM_LABELS, type Character, type Team } from "../../data/characters";
+import { byId, byTeam, TEAM_LABELS, type Character, type Team } from "../../data/characters";
 import CharacterPortrait from "../../components/CharacterPortrait";
 import {
   eligibleActorCards,
@@ -65,6 +65,83 @@ function RoleBar({
         <span className="w-5 text-center font-display text-moon-100">{count}</span>
         <StepBtn label="+" onClick={onInc} disabled={count >= (character.maxCount ?? 1)} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Picks a fixed number of cards from an eligible pool (Thief's middle cards,
+ * the Actor's borrowed roles). Chosen cards show as chips (tap to remove);
+ * the pool below is a grid of tappable portraits. A card may be chosen more
+ * than once when the pool offers it (e.g. Villager).
+ */
+function CardPicker({
+  eligible,
+  count,
+  value,
+  onChange,
+  onRandomize,
+  randomizeLabel,
+}: {
+  eligible: Character[];
+  count: number;
+  value: string[];
+  onChange: (ids: string[]) => void;
+  onRandomize: () => void;
+  randomizeLabel: string;
+}) {
+  const filled = value.filter(Boolean);
+  const full = filled.length >= count;
+  const add = (id: string) => {
+    if (!full) onChange([...filled, id]);
+  };
+  const removeAt = (i: number) => onChange(filled.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: count }).map((_, i) => {
+          const c = filled[i] ? byId(filled[i]) : undefined;
+          return c ? (
+            <button
+              key={i}
+              type="button"
+              onClick={() => removeAt(i)}
+              className="flex items-center gap-1.5 rounded-full border border-moss-400/60 bg-night-700/60 py-1 pr-2.5 pl-1 text-sm text-moon-100 hover:border-blood-500"
+            >
+              <CharacterPortrait character={c} className="h-6 w-6" />
+              {c.name}
+              <span className="text-moss-400">×</span>
+            </button>
+          ) : (
+            <span
+              key={i}
+              className="grid h-8 place-items-center rounded-full border border-dashed border-pine-600 px-4 text-xs text-moss-400"
+            >
+              Card {i + 1}
+            </span>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        {eligible.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            disabled={full}
+            onClick={() => add(c.id)}
+            className="flex items-center gap-2 rounded-lg border border-pine-600 bg-night-800/40 px-2 py-1.5 text-left text-xs text-moss-200 hover:border-moss-400 hover:text-moon-100 disabled:opacity-30 disabled:hover:border-pine-600"
+          >
+            <CharacterPortrait character={c} className="h-6 w-6 shrink-0" />
+            <span className="truncate">{c.name}</span>
+          </button>
+        ))}
+      </div>
+
+      <button type="button" onClick={onRandomize} className="btn-lantern px-4 py-2 text-sm">
+        {randomizeLabel}
+      </button>
     </div>
   );
 }
@@ -156,39 +233,16 @@ export default function RoleSelectStep({
             Two unused cards laid in the middle — on the first night the Thief may swap into one or
             keep the Thief. Villager and Werewolf may repeat.
           </p>
-          <div className="flex flex-col gap-2">
-            {[0, 1].map((i) => (
-              <select
-                key={i}
-                value={draft.middleCards[i] ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setDraft((prev) => {
-                    const mc = [...(prev.middleCards ?? [])];
-                    mc[i] = v;
-                    return { ...prev, middleCards: mc };
-                  });
-                }}
-                className="rounded-lg border border-pine-600 bg-night-800 px-3 py-2 text-moon-100 focus:border-moss-400 focus:outline-none"
-              >
-                <option value="">— pick card {i + 1} —</option>
-                {eligibleMiddleCards(draft.counts).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setDraft((prev) => ({ ...prev, middleCards: randomMiddleCards(prev.counts) }))
-              }
-              className="btn-lantern px-4 py-2 text-sm"
-            >
-              🎲 Randomize middle cards
-            </button>
-          </div>
+          <CardPicker
+            eligible={eligibleMiddleCards(draft.counts)}
+            count={2}
+            value={draft.middleCards}
+            onChange={(ids) => setDraft((prev) => ({ ...prev, middleCards: ids }))}
+            onRandomize={() =>
+              setDraft((prev) => ({ ...prev, middleCards: randomMiddleCards(prev.counts) }))
+            }
+            randomizeLabel="🎲 Randomize middle cards"
+          />
         </section>
       )}
 
@@ -201,39 +255,16 @@ export default function RoleSelectStep({
             Three unused village cards. Each of the first three nights the Actor secretly becomes a
             random one of these; after that they are a plain Villager.
           </p>
-          <div className="flex flex-col gap-2">
-            {[0, 1, 2].map((i) => (
-              <select
-                key={i}
-                value={draft.actorCards[i] ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setDraft((prev) => {
-                    const ac = [...(prev.actorCards ?? [])];
-                    ac[i] = v;
-                    return { ...prev, actorCards: ac };
-                  });
-                }}
-                className="rounded-lg border border-pine-600 bg-night-800 px-3 py-2 text-moon-100 focus:border-moss-400 focus:outline-none"
-              >
-                <option value="">— pick card {i + 1} —</option>
-                {eligibleActorCards(draft.counts).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setDraft((prev) => ({ ...prev, actorCards: randomActorCards(prev.counts) }))
-              }
-              className="btn-lantern px-4 py-2 text-sm"
-            >
-              🎲 Randomize Actor cards
-            </button>
-          </div>
+          <CardPicker
+            eligible={eligibleActorCards(draft.counts)}
+            count={3}
+            value={draft.actorCards}
+            onChange={(ids) => setDraft((prev) => ({ ...prev, actorCards: ids }))}
+            onRandomize={() =>
+              setDraft((prev) => ({ ...prev, actorCards: randomActorCards(prev.counts) }))
+            }
+            randomizeLabel="🎲 Randomize Actor cards"
+          />
         </section>
       )}
 

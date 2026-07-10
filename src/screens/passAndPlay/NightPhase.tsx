@@ -805,23 +805,43 @@ export default function NightPhase({
           {reference === "wake" ? (
             <ol className="flex flex-col gap-2">
               {wakingRoles.length ? (
-                wakingRoles.map((c) => (
-                  <li
-                    key={c.id}
-                    className="flex items-center gap-3 rounded-lg border border-pine-600 bg-night-800/40 px-3 py-2"
-                  >
-                    <CharacterPortrait character={c} className="h-9 w-9 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-display text-sm text-moon-100">{c.name}</p>
-                      {c.firstNightOnly && (
-                        <p className="text-[0.6rem] tracking-widest text-moss-300 uppercase">
-                          First night only
+                wakingRoles.map((c) => {
+                  // Struck through once no holder of this role is still alive.
+                  const allDead = !players.some(
+                    (p) => roleOf(p) === c.id && !dead.includes(p),
+                  );
+                  return (
+                    <li
+                      key={c.id}
+                      className={`relative flex items-center gap-3 rounded-lg border border-pine-600 bg-night-800/40 px-3 py-2 ${
+                        allDead ? "opacity-60" : ""
+                      }`}
+                    >
+                      <CharacterPortrait
+                        character={c}
+                        className={`h-9 w-9 shrink-0 ${allDead ? "grayscale" : ""}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={`truncate font-display text-sm ${
+                            allDead ? "text-moss-400 line-through" : "text-moon-100"
+                          }`}
+                        >
+                          {c.name}
                         </p>
+                        {c.firstNightOnly && (
+                          <p className="text-[0.6rem] tracking-widest text-moss-300 uppercase">
+                            First night only
+                          </p>
+                        )}
+                      </div>
+                      <span className="font-display text-xs text-moss-400">#{c.nightOrder}</span>
+                      {allDead && (
+                        <span className="pointer-events-none absolute inset-x-2 top-1/2 h-0.5 -translate-y-1/2 rounded bg-blood-500/70" />
                       )}
-                    </div>
-                    <span className="font-display text-xs text-moss-400">#{c.nightOrder}</span>
-                  </li>
-                ))
+                    </li>
+                  );
+                })
               ) : (
                 <p className="text-center text-sm text-moss-300">No roles wake at night.</p>
               )}
