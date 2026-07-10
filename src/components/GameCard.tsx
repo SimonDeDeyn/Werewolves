@@ -35,7 +35,13 @@ function ArtWindow({ character }: { character: Character }) {
       style={{ borderColor: `${TEAM_HEX[character.team]}55`, aspectRatio: "4 / 3" }}
     >
       {src ? (
-        <img src={src} alt={character.name} className="h-full w-full object-cover" />
+        // Real full-card art is composed to fill; a bare head portrait is shown
+        // whole (contained) so the face is never cropped by the wide art window.
+        <img
+          src={src}
+          alt={character.name}
+          className={`h-full w-full ${card ? "object-cover" : "object-contain"}`}
+        />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(120%_100%_at_50%_0%,#16241a,#080f0a)]">
           <CharacterPortrait character={character} className="h-24 w-24" />
