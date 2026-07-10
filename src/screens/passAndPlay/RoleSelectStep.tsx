@@ -2,7 +2,9 @@ import type { Dispatch, SetStateAction } from "react";
 import { byTeam, TEAM_LABELS, type Character, type Team } from "../../data/characters";
 import CharacterPortrait from "../../components/CharacterPortrait";
 import {
+  eligibleActorCards,
   eligibleMiddleCards,
+  randomActorCards,
   randomMiddleCards,
   recommendedWolves,
   roleSlots,
@@ -185,6 +187,51 @@ export default function RoleSelectStep({
               className="btn-lantern px-4 py-2 text-sm"
             >
               🎲 Randomize middle cards
+            </button>
+          </div>
+        </section>
+      )}
+
+      {(draft.counts["actor"] ?? 0) > 0 && (
+        <section>
+          <h3 className="mb-2 border-b border-pine-600 pb-1 font-display text-sm tracking-[0.2em] text-moss-300 uppercase">
+            Actor's three roles
+          </h3>
+          <p className="mb-2 text-xs text-moss-300 italic">
+            Three unused village cards. Each of the first three nights the Actor secretly becomes a
+            random one of these; after that they are a plain Villager.
+          </p>
+          <div className="flex flex-col gap-2">
+            {[0, 1, 2].map((i) => (
+              <select
+                key={i}
+                value={draft.actorCards[i] ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setDraft((prev) => {
+                    const ac = [...(prev.actorCards ?? [])];
+                    ac[i] = v;
+                    return { ...prev, actorCards: ac };
+                  });
+                }}
+                className="rounded-lg border border-pine-600 bg-night-800 px-3 py-2 text-moon-100 focus:border-moss-400 focus:outline-none"
+              >
+                <option value="">— pick card {i + 1} —</option>
+                {eligibleActorCards(draft.counts).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setDraft((prev) => ({ ...prev, actorCards: randomActorCards(prev.counts) }))
+              }
+              className="btn-lantern px-4 py-2 text-sm"
+            >
+              🎲 Randomize Actor cards
             </button>
           </div>
         </section>

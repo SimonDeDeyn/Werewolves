@@ -15,10 +15,13 @@ type View = "wake" | "select" | "board";
  * before the werewolves' victim is recorded. Grows as more roles are wired in.
  */
 const IMPLEMENTED_WAKE = new Set<string>([
+  "sleepwalker",
   "thief",
   "vile-doppelganger",
+  "actor",
   "cupid",
   "seer",
+  "defender",
   "wild-child",
   "pyromaniac",
   "piper",
@@ -37,6 +40,7 @@ interface Resolution {
   usedServants: string[]; // servant holders (players) who have already intervened this round
   huntersFired: string[]; // Hunters who have already taken their shot
   servantsDone: boolean; // the intervene hub has been dismissed
+  wolfFatherDone: boolean; // the Accursed Wolf-Father's convert prompt is resolved
   notes: string[]; // moderator-facing footnotes about spares, survivals, etc.
 }
 
@@ -63,6 +67,13 @@ interface Snapshot {
   soaked: string[];
   charmed: string[];
   pendingBurn: string[];
+  protectedPlayer: string | null;
+  lastProtected: string | null;
+  sleepwalkerVisit: string | null;
+  lastVisit: string | null;
+  actorUsed: string[];
+  actorDraw: string | null;
+  wolfFatherUsed: boolean;
   pending: string[];
   lastDeaths: string[];
   lastNotes: string[];
@@ -90,12 +101,14 @@ export default function NightPhase({
   assignments,
   board,
   middleCards = [],
+  actorCards = [],
   onExit,
   onPlayAgain,
 }: {
   assignments: Assignment[];
   board: Assignment[];
   middleCards?: string[];
+  actorCards?: string[];
   onExit: () => void;
   onPlayAgain: () => void;
 }) {
@@ -131,6 +144,17 @@ export default function NightPhase({
   const [charmed, setCharmed] = useState<string[]>([]);
   // Soaked houses the Pyromaniac ignited this night — burned in at record time.
   const [pendingBurn, setPendingBurn] = useState<string[]>([]);
+  // Defender's charge this night, and last night's (can't be repeated).
+  const [protectedPlayer, setProtectedPlayer] = useState<string | null>(null);
+  const [lastProtected, setLastProtected] = useState<string | null>(null);
+  // Sleepwalker's visit this night, and last night's (can't be repeated).
+  const [sleepwalkerVisit, setSleepwalkerVisit] = useState<string | null>(null);
+  const [lastVisit, setLastVisit] = useState<string | null>(null);
+  // Actor: which of the three borrowed cards have been drawn, and tonight's draw.
+  const [actorUsed, setActorUsed] = useState<string[]>([]);
+  const [actorDraw, setActorDraw] = useState<string | null>(null);
+  // Accursed Wolf-Father's one-time villager-to-wolf conversion.
+  const [wolfFatherUsed, setWolfFatherUsed] = useState(false);
   const [pending, setPending] = useState<string[]>([]);
   const [lastDeaths, setLastDeaths] = useState<string[]>([]);
   const [lastNotes, setLastNotes] = useState<string[]>([]);
@@ -183,6 +207,13 @@ export default function NightPhase({
     soaked,
     charmed,
     pendingBurn,
+    protectedPlayer,
+    lastProtected,
+    sleepwalkerVisit,
+    lastVisit,
+    actorUsed,
+    actorDraw,
+    wolfFatherUsed,
     pending,
     lastDeaths,
     lastNotes,
@@ -217,6 +248,13 @@ export default function NightPhase({
     setSoaked(prev.soaked);
     setCharmed(prev.charmed);
     setPendingBurn(prev.pendingBurn);
+    setProtectedPlayer(prev.protectedPlayer);
+    setLastProtected(prev.lastProtected);
+    setSleepwalkerVisit(prev.sleepwalkerVisit);
+    setLastVisit(prev.lastVisit);
+    setActorUsed(prev.actorUsed);
+    setActorDraw(prev.actorDraw);
+    setWolfFatherUsed(prev.wolfFatherUsed);
     setPending(prev.pending);
     setLastDeaths(prev.lastDeaths);
     setLastNotes(prev.lastNotes);
@@ -309,9 +347,29 @@ export default function NightPhase({
     return null;
   };
 
-  type Prompt = { kind: "servantHub" } | { kind: "hunter"; player: string };
+  type Prompt =
+    | { kind: "servantHub" }
+    | { kind: "hunter"; player: string }
+    | { kind: "wolfFather" };
+
+  /** The living, not-dying holder of the Accursed Wolf-Father, if any. */
+  const wolfFatherHolder = (r: Resolution) =>
+    players.find(
+      (p) => roleOf(p) === "accursed-wolf-father" && !dead.includes(p) && !r.deaths.includes(p),
+    ) ?? null;
 
   const nextPrompt = (r: Resolution): Prompt | null => {
+    // Accursed Wolf-Father (a wolf power, so unaffected by the Elder's death)
+    // may convert a villager the wolves slew into a new wolf, before anything else.
+    if (
+      r.phase === "night" &&
+      !r.wolfFatherDone &&
+      !wolfFatherUsed &&
+      wolfFatherHolder(r) &&
+      r.deaths.some((p) => teamOf(p) === "village")
+    ) {
+      return { kind: "wolfFather" };
+    }
     // Once the Elder falls to the village, every villager power is gone.
     if (powersDisabled) return null;
     // Servants only step in after a village vote, before the condemned are revealed.
@@ -395,7 +453,60 @@ export default function NightPhase({
     let deaths = [...raw];
 
     if (phase === "night") {
-      // The Rusty Sword Knight's infection from a prior night lands now.
+      // The Defender's shield turns the wolves away from their charge (wolves only).
+      if (protectedPlayer && deaths.includes(protectedPlayer)) {
+        deaths = deaths.filter((p) => p !== protectedPlayer);
+        notes.push(`The Defender's shield turned the wolves away from ${protectedPlayer}.`);
+      }
+
+      // The Elder secretly shrugs off the wolves' first attack — before the
+      // Sleepwalker reads the room, so a surviving Elder isn't counted as slain.
+      if (!powersDisabled) {
+        const elder = deaths.find((p) => roleOf(p) === "elder" && !elderSurvived.includes(p));
+        if (elder) {
+          deaths = deaths.filter((p) => p !== elder);
+          setElderSurvived((s) => [...s, elder]);
+          notes.push(
+            `${elder} is the Elder and secretly survives the wolves' first bite — keep it quiet.`,
+          );
+        }
+      }
+
+      // Sleepwalker: away in an empty bed, or caught at the house she visited.
+      const sw = players.find((p) => roleOf(p) === "sleepwalker" && !dead.includes(p));
+      if (sw && sleepwalkerVisit) {
+        if (deaths.includes(sw)) {
+          deaths = deaths.filter((p) => p !== sw);
+          notes.push("The Sleepwalker was out wandering — the wolves found her bed empty.");
+        }
+        if (deaths.includes(sleepwalkerVisit) && !deaths.includes(sw)) {
+          deaths = [...deaths, sw];
+          notes.push(
+            `The Sleepwalker was caught at ${sleepwalkerVisit}'s house and slain alongside them.`,
+          );
+        }
+        notes.push(
+          byId(roleOf(sleepwalkerVisit))?.nightOrder != null
+            ? `The Sleepwalker senses ${sleepwalkerVisit} acted suspiciously in the night.`
+            : `The Sleepwalker found ${sleepwalkerVisit} sleeping soundly.`,
+        );
+      }
+
+      // A Rusty Sword Knight slain by the wolves infects the wolf to their left.
+      if (!powersDisabled) {
+        const knight = deaths.find((p) => roleOf(p) === "rusty-sword-knight");
+        if (knight) {
+          const wolf = wolfToLeftOf(knight, deaths);
+          if (wolf) {
+            setInfectedPending((q) => [...q, wolf]);
+            notes.push(
+              "The Rusty Sword Knight's rusty blade cuts the wolf to their left — they will die by the next dawn.",
+            );
+          }
+        }
+      }
+
+      // The Knight's infection from a prior night lands now.
       const due = infectedPending.filter((p) => !dead.includes(p) && !deaths.includes(p));
       if (due.length) {
         deaths = [...deaths, ...due];
@@ -416,30 +527,6 @@ export default function NightPhase({
       if (pendingBurn.length) {
         setPendingBurn([]);
         setSoaked([]);
-      }
-
-      if (!powersDisabled) {
-        // The Elder secretly shrugs off the wolves' first attack.
-        const elder = deaths.find((p) => roleOf(p) === "elder" && !elderSurvived.includes(p));
-        if (elder) {
-          deaths = deaths.filter((p) => p !== elder);
-          setElderSurvived((s) => [...s, elder]);
-          notes.push(
-            `${elder} is the Elder and secretly survives the wolves' first bite — keep it quiet.`,
-          );
-        }
-
-        // A Rusty Sword Knight slain by the wolves infects the wolf to their left.
-        const knight = deaths.find((p) => roleOf(p) === "rusty-sword-knight");
-        if (knight) {
-          const wolf = wolfToLeftOf(knight, deaths);
-          if (wolf) {
-            setInfectedPending((q) => [...q, wolf]);
-            notes.push(
-              "The Rusty Sword Knight's rusty blade cuts the wolf to their left — they will die by the next dawn.",
-            );
-          }
-        }
       }
     } else if (!powersDisabled) {
       // Day vote — the Prince and Village Idiot may dodge the noose once.
@@ -468,6 +555,7 @@ export default function NightPhase({
       usedServants: [],
       huntersFired: [],
       servantsDone: false,
+      wolfFatherDone: false,
       notes,
     });
   };
@@ -521,6 +609,27 @@ export default function NightPhase({
     step({ ...res, deaths, huntersFired: [...res.huntersFired, hunter] });
   };
 
+  /** Accursed Wolf-Father: convert a slain villager into a wolf, or let them die. */
+  const wolfFatherConvert = (victim: string | null) => {
+    if (!res) return;
+    pushHistory();
+    if (victim) {
+      setTurnedWolves((w) => [...w, victim]);
+      setWolfFatherUsed(true);
+      step({
+        ...res,
+        deaths: res.deaths.filter((p) => p !== victim),
+        wolfFatherDone: true,
+        notes: [
+          ...res.notes,
+          `The Accursed Wolf-Father's bite turns ${victim} into a new werewolf.`,
+        ],
+      });
+    } else {
+      step({ ...res, wolfFatherDone: true });
+    }
+  };
+
   const toggle = (name: string) =>
     setPending((p) => (p.includes(name) ? p.filter((x) => x !== name) : [...p, name]));
 
@@ -532,6 +641,8 @@ export default function NightPhase({
       (c) =>
         IMPLEMENTED_WAKE.has(c.id) &&
         (!c.firstNightOnly || rnd === 1) &&
+        // The Actor borrows a role only for its first three nights.
+        !(c.id === "actor" && actorUsed.length >= 3) &&
         players.some((p) => !dead.includes(p) && roleOf(p) === c.id),
     ).map((c) => c.id);
 
@@ -586,6 +697,30 @@ export default function NightPhase({
   const confirmCharm = () => {
     setCharmed((c) => [...c, ...wakePicks]);
     advanceWake();
+  };
+
+  /** Defender shields their chosen charge for the night, then moves on. */
+  const confirmDefend = () => {
+    if (wakePick) setProtectedPlayer(wakePick);
+    advanceWake();
+  };
+
+  /** Sleepwalker locks in tonight's visit, then moves on. */
+  const confirmVisit = () => {
+    if (wakePick) setSleepwalkerVisit(wakePick);
+    advanceWake();
+  };
+
+  /** Actor draws a random unused borrowed card and reveals it. */
+  const drawActorCard = () => {
+    pushHistory();
+    const pool = actorCards.filter((c) => !actorUsed.includes(c));
+    const draw = pool.length
+      ? pool[Math.floor(Math.random() * pool.length)]
+      : "villager";
+    setActorDraw(draw);
+    setActorUsed((u) => [...u, draw]);
+    setWakeShown(true);
   };
 
   const isNight = phase === "night";
@@ -812,6 +947,50 @@ export default function NightPhase({
 
     const prompt = nextPrompt(res)!;
 
+    if (prompt.kind === "wolfFather") {
+      const victims = res.deaths.filter((p) => teamOf(p) === "village");
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-blood-500">
+            The Accursed Wolf-Father stirs
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Once per game, instead of letting a villager the wolves slew die, the Wolf-Father may
+            turn one into a new werewolf. Choose whom, or let the kill stand.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {victims.map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setResPick(v)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  resPick === v
+                    ? "border-blood-500 bg-blood-700/40 text-moon-100 ring-2 ring-blood-500"
+                    : "border-pine-600 text-moss-200 hover:border-moss-400"
+                }`}
+              >
+                {v} · {roleName(v)}
+              </button>
+            ))}
+          </div>
+          <div className="flex w-full max-w-sm gap-3">
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={() => wolfFatherConvert(null)}>
+              Let them die
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              disabled={!resPick}
+              onClick={() => wolfFatherConvert(resPick)}
+            >
+              {resPick ? `Turn ${resPick} into a wolf →` : "Choose a victim"}
+            </button>
+          </div>
+          {undoRow}
+        </div>
+      );
+    }
+
     if (prompt.kind === "servantHub") {
       const available = availableServants(res);
       return (
@@ -926,6 +1105,121 @@ export default function NightPhase({
     const role = byId(roleId);
     const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === roleId);
     const holderLabel = holders.join(" & ");
+    const pickBtn = (t: string) =>
+      `rounded-full border px-3 py-1.5 text-sm ${
+        wakePick === t
+          ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+          : "border-pine-600 text-moss-200 hover:border-moss-400"
+      }`;
+
+    // Sleepwalker — visits a living player (not herself, not last night's house).
+    if (roleId === "sleepwalker") {
+      const targets = players.filter(
+        (p) => !dead.includes(p) && !holders.includes(p) && p !== lastVisit,
+      );
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Sleepwalker wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Whose house does she wander
+            into tonight? She cannot visit the same house two nights running.
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {targets.map((t) => (
+              <button key={t} type="button" onClick={() => setWakePick(t)} className={pickBtn(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <button
+            className="btn-lantern w-full max-w-sm px-4 py-3 text-lg"
+            disabled={!wakePick}
+            onClick={confirmVisit}
+          >
+            {wakePick ? `Visit ${wakePick} →` : "Choose a house"}
+          </button>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
+    // Defender — shields one living player (may be self) from the wolves only.
+    if (roleId === "defender") {
+      const targets = players.filter((p) => !dead.includes(p) && p !== lastProtected);
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Defender wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Whom do they shield from the
+            wolves tonight? Not the same person twice in a row — and they may guard themselves.
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {targets.map((t) => (
+              <button key={t} type="button" onClick={() => setWakePick(t)} className={pickBtn(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <button
+            className="btn-lantern w-full max-w-sm px-4 py-3 text-lg"
+            disabled={!wakePick}
+            onClick={confirmDefend}
+          >
+            {wakePick ? `Shield ${wakePick} →` : "Choose whom to guard"}
+          </button>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
+    // Actor — draws a random borrowed role for the night (first three nights).
+    if (roleId === "actor") {
+      if (wakeShown && actorDraw) {
+        const card = byId(actorDraw);
+        return (
+          <div className="flex flex-col items-center gap-4 py-2 text-center">
+            <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+              {holderLabel} borrows…
+            </h1>
+            <p className="max-w-sm text-sm text-moss-200">
+              Tonight the Actor plays this role — show it to them and run its power. Come dawn they
+              are the Actor once more.
+            </p>
+            {card && <GameCard character={card} initialFlipped />}
+            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+              Done →
+            </button>
+            {undoRow}
+            {referenceOverlay}
+          </div>
+        );
+      }
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Actor wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Draw tonight's borrowed role
+            — even they don't know which of the three it will be.
+          </p>
+          {referenceButtons}
+          <button className="btn-lantern px-6 py-3.5 text-lg" onClick={drawActorCard}>
+            Draw tonight's role →
+          </button>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
 
     // Thief — swap into one of the two middle cards, or keep the Thief
     // (first night only). The board keeps their Thief card.
@@ -1368,6 +1662,7 @@ export default function NightPhase({
           selected={pending}
           soaked={soaked}
           charmed={charmed}
+          defended={protectedPlayer ? [protectedPlayer] : []}
           onToggle={toggle}
           centerLabel={label}
         />
@@ -1410,6 +1705,12 @@ export default function NightPhase({
     if (phase === "night") {
       setPhase("day");
       setView("select");
+      // The night's protection / visit lapse; remember them so they can't repeat.
+      setLastProtected(protectedPlayer);
+      setProtectedPlayer(null);
+      setLastVisit(sleepwalkerVisit);
+      setSleepwalkerVisit(null);
+      setActorDraw(null);
     } else {
       const nextRound = round + 1;
       setPhase("night");

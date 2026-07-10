@@ -21,6 +21,11 @@ export interface SetupDraft {
    * Only meaningful when a Thief is in the cast; otherwise ignored.
    */
   middleCards: string[];
+  /**
+   * Three unused village cards the Actor cycles through (one random per night,
+   * for three nights). Only meaningful when an Actor is in the cast.
+   */
+  actorCards: string[];
 }
 
 export const emptyDraft = (): SetupDraft => ({
@@ -30,6 +35,7 @@ export const emptyDraft = (): SetupDraft => ({
   counts: {},
   randomize: false,
   middleCards: [],
+  actorCards: [],
 });
 
 /**
@@ -48,6 +54,24 @@ export function randomMiddleCards(counts: Record<string, number>): string[] {
   if (pool.length < 2) return pool.map((c) => c.id);
   const shuffled = shuffle(pool);
   return [shuffled[0].id, shuffled[1].id];
+}
+
+/**
+ * Village-team roles the Actor may borrow: unused village cards (plus plain
+ * Villager, which may repeat). The Actor never borrows a wolf or solo card.
+ */
+export function eligibleActorCards(counts: Record<string, number>): Character[] {
+  return CHARACTERS.filter(
+    (c) => c.team === "village" && c.id !== "actor" && (c.id === "villager" || (counts[c.id] ?? 0) === 0),
+  );
+}
+
+/** Three random distinct eligible cards for the Actor's three nights. */
+export function randomActorCards(counts: Record<string, number>): string[] {
+  const pool = eligibleActorCards(counts);
+  return shuffle(pool)
+    .slice(0, 3)
+    .map((c) => c.id);
 }
 
 /** Number of players who actually receive a role (moderator is excluded). */
@@ -100,6 +124,8 @@ export function setupError(draft: SetupDraft): string | null {
   if (wolves * 2 >= slots) return "Too many werewolves — the village can't win.";
   if ((draft.counts["thief"] ?? 0) > 0 && draft.middleCards.filter(Boolean).length < 2)
     return "Pick two middle cards for the Thief (or hit Randomize).";
+  if ((draft.counts["actor"] ?? 0) > 0 && draft.actorCards.filter(Boolean).length < 3)
+    return "Pick three cards for the Actor (or hit Randomize).";
   return null;
 }
 

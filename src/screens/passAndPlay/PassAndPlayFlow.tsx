@@ -262,6 +262,7 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
           assignments={assignments}
           board={board}
           middleCards={draft.middleCards}
+          actorCards={draft.actorCards}
           onExit={onExit}
           onPlayAgain={() => setStep("moderator")}
         />

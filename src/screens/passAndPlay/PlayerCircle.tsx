@@ -9,6 +9,7 @@ export default function PlayerCircle({
   selected = [],
   soaked = [],
   charmed = [],
+  defended = [],
   onToggle,
   centerLabel,
 }: {
@@ -19,6 +20,8 @@ export default function PlayerCircle({
   soaked?: string[];
   /** Piper's charmed players — badged with a music note. */
   charmed?: string[];
+  /** The Defender's protected player — badged with a shield. */
+  defended?: string[];
   onToggle?: (name: string) => void;
   centerLabel?: string;
 }) {
@@ -44,6 +47,7 @@ export default function PlayerCircle({
         const isSel = selected.includes(name);
         const isSoaked = soaked.includes(name) && !isDead;
         const isCharmed = charmed.includes(name) && !isDead;
+        const isDefended = defended.includes(name) && !isDead;
         const interactive = !!onToggle && !isDead;
 
         return (
@@ -75,9 +79,20 @@ export default function PlayerCircle({
                   <line x1="33" y1="8" x2="7" y2="32" stroke="#b3271e" strokeWidth="3.5" strokeLinecap="round" />
                 </svg>
               )}
-              {(isSoaked || isCharmed) && (
+              {/* Status badges, one per corner so several can show at once. */}
+              {isSoaked && (
+                <span className="pointer-events-none absolute -top-1.5 -left-1.5 grid h-4 w-4 place-items-center rounded-full bg-night-950 text-[0.6rem] leading-none ring-1 ring-pine-500">
+                  🔥
+                </span>
+              )}
+              {isDefended && (
                 <span className="pointer-events-none absolute -top-1.5 -right-1.5 grid h-4 w-4 place-items-center rounded-full bg-night-950 text-[0.6rem] leading-none ring-1 ring-pine-500">
-                  {isSoaked ? "🔥" : "🎵"}
+                  🛡️
+                </span>
+              )}
+              {isCharmed && (
+                <span className="pointer-events-none absolute -right-1.5 -bottom-1.5 grid h-4 w-4 place-items-center rounded-full bg-night-950 text-[0.6rem] leading-none ring-1 ring-pine-500">
+                  🎵
                 </span>
               )}
             </span>

@@ -287,9 +287,9 @@ export const CHARACTERS: Character[] = [
     id: "sleepwalker",
     name: "Sleepwalker",
     team: "village",
-    // Wakes last, after every other night role, so her reading reflects the
-    // whole night. Kept well above the current maximum to leave room.
-    nightOrder: 200,
+    // Wakes first — she slips out before anyone else stirs, so the moderator
+    // knows whose house she is in before the night's powers resolve.
+    nightOrder: 5,
     description: "Never sleeps in her own bed — each night she wanders into someone else's.",
     ability:
       "Each night, visits another living player (not herself, not twice in a row). Safe if the wolves strike her own house, but dies if they strike the one she visited — and learns only whether that player used a night power.",
