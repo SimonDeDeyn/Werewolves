@@ -71,8 +71,8 @@ interface Snapshot {
   lastProtected: string | null;
   sleepwalkerVisit: string | null;
   lastVisit: string | null;
-  actorUsed: string[];
-  actorDraw: string | null;
+  actorUsedIdx: number[];
+  actorPick: number | null;
   wolfFatherUsed: boolean;
   pending: string[];
   lastDeaths: string[];
@@ -150,9 +150,11 @@ export default function NightPhase({
   // Sleepwalker's visit this night, and last night's (can't be repeated).
   const [sleepwalkerVisit, setSleepwalkerVisit] = useState<string | null>(null);
   const [lastVisit, setLastVisit] = useState<string | null>(null);
-  // Actor: which of the three borrowed cards have been drawn, and tonight's draw.
-  const [actorUsed, setActorUsed] = useState<string[]>([]);
-  const [actorDraw, setActorDraw] = useState<string | null>(null);
+  // Actor: which of the three fixed card positions are spent, and tonight's pick.
+  // Positions stay put across nights (0/1 top row, 2 bottom-centre) so spent
+  // cards leave a gap and the survivors keep their placement.
+  const [actorUsedIdx, setActorUsedIdx] = useState<number[]>([]);
+  const [actorPick, setActorPick] = useState<number | null>(null);
   // Accursed Wolf-Father's one-time villager-to-wolf conversion.
   const [wolfFatherUsed, setWolfFatherUsed] = useState(false);
   const [pending, setPending] = useState<string[]>([]);
@@ -211,8 +213,8 @@ export default function NightPhase({
     lastProtected,
     sleepwalkerVisit,
     lastVisit,
-    actorUsed,
-    actorDraw,
+    actorUsedIdx,
+    actorPick,
     wolfFatherUsed,
     pending,
     lastDeaths,
@@ -252,8 +254,8 @@ export default function NightPhase({
     setLastProtected(prev.lastProtected);
     setSleepwalkerVisit(prev.sleepwalkerVisit);
     setLastVisit(prev.lastVisit);
-    setActorUsed(prev.actorUsed);
-    setActorDraw(prev.actorDraw);
+    setActorUsedIdx(prev.actorUsedIdx);
+    setActorPick(prev.actorPick);
     setWolfFatherUsed(prev.wolfFatherUsed);
     setPending(prev.pending);
     setLastDeaths(prev.lastDeaths);
@@ -642,7 +644,7 @@ export default function NightPhase({
         IMPLEMENTED_WAKE.has(c.id) &&
         (!c.firstNightOnly || rnd === 1) &&
         // The Actor borrows a role only for its first three nights.
-        !(c.id === "actor" && actorUsed.length >= 3) &&
+        !(c.id === "actor" && actorUsedIdx.length >= 3) &&
         players.some((p) => !dead.includes(p) && roleOf(p) === c.id),
     ).map((c) => c.id);
 
@@ -711,16 +713,15 @@ export default function NightPhase({
     advanceWake();
   };
 
-  /** Actor draws a random unused borrowed card and reveals it. */
-  const drawActorCard = () => {
+  /**
+   * Actor turns over one of the still-unused card positions — the first card
+   * they flip is the role they play tonight. The position is then spent for the
+   * rest of the game so it can't be chosen again.
+   */
+  const pickActor = (idx: number) => {
     pushHistory();
-    const pool = actorCards.filter((c) => !actorUsed.includes(c));
-    const draw = pool.length
-      ? pool[Math.floor(Math.random() * pool.length)]
-      : "villager";
-    setActorDraw(draw);
-    setActorUsed((u) => [...u, draw]);
-    setWakeShown(true);
+    setActorPick(idx);
+    setActorUsedIdx((u) => [...u, idx]);
   };
 
   const isNight = phase === "night";
@@ -1200,41 +1201,61 @@ export default function NightPhase({
       );
     }
 
-    // Actor — draws a random borrowed role for the night (first three nights).
+    // Actor — turns over one of three fixed cards (the first they flip is
+    // tonight's role). Spent positions stay empty so the rest keep their place.
     if (roleId === "actor") {
-      if (wakeShown && actorDraw) {
-        const card = byId(actorDraw);
+      const picked = actorPick !== null;
+      // A single card position in the 2-over-1 pyramid: spent → empty slot,
+      // otherwise a face-down card the Actor can turn over (until one is chosen).
+      const actorSlot = (i: number) => {
+        const c = byId(actorCards[i]);
+        if (!c || (actorUsedIdx.includes(i) && actorPick !== i)) {
+          return (
+            <div
+              className="aspect-[5/9] w-[38vw] max-w-[140px] rounded-2xl border-2 border-dashed border-pine-600/40"
+              aria-hidden
+            />
+          );
+        }
+        const isPick = actorPick === i;
         return (
-          <div className="flex flex-col items-center gap-4 py-2 text-center">
-            <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
-              {holderLabel} borrows…
-            </h1>
-            <p className="max-w-sm text-sm text-moss-200">
-              Tonight the Actor plays this role — show it to them and run its power. Come dawn they
-              are the Actor once more.
-            </p>
-            {card && <GameCard character={card} initialFlipped />}
-            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
-              Done →
-            </button>
-            {undoRow}
-            {referenceOverlay}
-          </div>
+          <GameCard
+            character={c}
+            className="w-[38vw] max-w-[140px]"
+            flipped={!isPick}
+            onClick={picked ? undefined : () => pickActor(i)}
+            disabled={picked && !isPick}
+          />
         );
-      }
+      };
       return (
         <div className="flex flex-col items-center gap-4 py-2 text-center">
           <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
-            The Actor wakes
+            {picked ? `${holderLabel} borrows…` : "The Actor wakes"}
           </h1>
           <p className="max-w-sm text-sm text-moss-200">
-            Wake <span className="text-moon-100">{holderLabel}</span>. Draw tonight's borrowed role
-            — even they don't know which of the three it will be.
+            {picked ? (
+              "Tonight the Actor plays this role — show it to them and run its power. Come dawn they are the Actor once more."
+            ) : (
+              <>
+                Wake <span className="text-moon-100">{holderLabel}</span>. They turn over one card —
+                the first one they flip is the role they play tonight.
+              </>
+            )}
           </p>
-          {referenceButtons}
-          <button className="btn-lantern px-6 py-3.5 text-lg" onClick={drawActorCard}>
-            Draw tonight's role →
-          </button>
+          {!picked && referenceButtons}
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex justify-center gap-3">
+              {actorSlot(0)}
+              {actorSlot(1)}
+            </div>
+            <div className="flex justify-center">{actorSlot(2)}</div>
+          </div>
+          {picked && (
+            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+              Done →
+            </button>
+          )}
           {undoRow}
           {referenceOverlay}
         </div>
@@ -1258,15 +1279,15 @@ export default function NightPhase({
             may swap into one, or keep the Thief.
           </p>
           {referenceButtons}
-          <div className="flex flex-col items-center gap-5">
+          <div className="flex flex-row items-start justify-center gap-4">
             {cards.map((c, i) => (
               <div key={i} className="flex flex-col items-center gap-2">
-                <GameCard character={c} initialFlipped />
+                <GameCard character={c} initialFlipped className="w-[42vw] max-w-[160px]" />
                 <button
-                  className="btn-lantern px-5 py-2.5"
+                  className="btn-lantern px-4 py-2 text-sm"
                   onClick={() => confirmThief(thief, c.id)}
                 >
-                  Swap into the {c.name} →
+                  Choose this one →
                 </button>
               </div>
             ))}
@@ -1730,7 +1751,7 @@ export default function NightPhase({
       setProtectedPlayer(null);
       setLastVisit(sleepwalkerVisit);
       setSleepwalkerVisit(null);
-      setActorDraw(null);
+      setActorPick(null);
     } else {
       const nextRound = round + 1;
       setPhase("night");

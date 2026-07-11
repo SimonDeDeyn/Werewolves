@@ -6,11 +6,15 @@
  * Art priority for the front window: full-card art (src/assets/cards/<id>) →
  * head portrait (src/assets/portraits/<id>) → generated SVG emblem.
  */
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Character, Team } from "../data/characters";
 import TeamIcon from "./TeamIcon";
 import CharacterPortrait, { cardArtFor, portraitArtFor } from "./CharacterPortrait";
 import heroWerewolf from "../assets/brand/hero-werewolf.jpg";
+
+// Fixed design size the card is laid out at before being scaled to fit; 5:9.
+const CARD_W = 300;
+const CARD_H = 540;
 
 const TEAM_HEX: Record<Team, string> = {
   village: "#a6c4a0",
@@ -135,25 +139,72 @@ function CardBack() {
 export default function GameCard({
   character,
   initialFlipped = false,
+  flipped: flippedProp,
+  onClick,
+  disabled = false,
+  className = "w-[300px] max-w-[82vw]",
 }: {
   character: Character;
   /** Start showing the back (used by the reveal — tap flips to the role). */
   initialFlipped?: boolean;
+  /**
+   * Controlled face: when provided, the shown side is driven by the parent
+   * (true = back) and the internal tap-to-flip is disabled. Used where the flip
+   * is a game choice rather than a free peek (e.g. the Actor's card pick).
+   */
+  flipped?: boolean;
+  /** Overrides the default tap-to-flip — makes the whole card a selectable button. */
+  onClick?: () => void;
+  disabled?: boolean;
+  /** Sizing for the outer button; override to fit several cards side by side. */
+  className?: string;
 }) {
-  const [flipped, setFlipped] = useState(initialFlipped);
+  const [internalFlipped, setInternalFlipped] = useState(initialFlipped);
+  const flipped = flippedProp ?? internalFlipped;
+  const controlled = flippedProp !== undefined || onClick !== undefined;
+
+  // The card is laid out at a fixed 300×540 design size, then scaled to fill
+  // whatever width the outer button is given. That way the whole card — text,
+  // padding, art — shrinks in proportion and reads the same at 140px in a picker
+  // as at 300px on its own, instead of the text overflowing a narrow card.
+  const outerRef = useRef<HTMLButtonElement>(null);
+  const [scale, setScale] = useState(1);
+  useLayoutEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const apply = () => setScale(el.clientWidth / CARD_W);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <button
+      ref={outerRef}
       type="button"
-      onClick={() => setFlipped((f) => !f)}
-      aria-label={`${character.name} card — tap to flip`}
-      className="w-[300px] max-w-[82vw] [perspective:1400px]"
+      onClick={onClick ?? (() => setInternalFlipped((f) => !f))}
+      disabled={disabled}
+      aria-label={controlled ? `${character.name} card` : `${character.name} card — tap to flip`}
+      className={`${className} block overflow-hidden disabled:cursor-default`}
+      style={{ aspectRatio: `${CARD_W} / ${CARD_H}` }}
     >
       <div
-        className="relative aspect-[5/9] w-full transition-transform duration-700 [transform-style:preserve-3d]"
-        style={{ transform: flipped ? "rotateY(180deg)" : "none" }}
+        className="[perspective:1400px]"
+        style={{
+          width: `${CARD_W}px`,
+          height: `${CARD_H}px`,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+        }}
       >
-        <CardFront character={character} />
-        <CardBack />
+        <div
+          className="relative h-full w-full transition-transform duration-700 [transform-style:preserve-3d]"
+          style={{ transform: flipped ? "rotateY(180deg)" : "none" }}
+        >
+          <CardFront character={character} />
+          <CardBack />
+        </div>
       </div>
     </button>
   );

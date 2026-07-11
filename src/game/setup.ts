@@ -39,18 +39,38 @@ export const emptyDraft = (): SetupDraft => ({
 });
 
 /**
- * Roles eligible to sit in the middle for the Thief: cards NOT already dealt to
- * a player, plus plain Villager/Werewolf which may always be duplicated.
+ * Extra constraints applied when the Thief and Actor share a table: their card
+ * pools must be disjoint (`exclude` holds the other role's picks) and drawn
+ * strictly from unused cards (`strictUnused` drops the Villager/Werewolf repeat
+ * allowance, so no card already dealt to a player can appear).
  */
-export function eligibleMiddleCards(counts: Record<string, number>): Character[] {
-  return CHARACTERS.filter(
-    (c) => c.id === "villager" || c.id === "werewolf" || (counts[c.id] ?? 0) === 0,
-  );
+export interface CardPoolOpts {
+  exclude?: string[];
+  strictUnused?: boolean;
+}
+
+/**
+ * Roles eligible to sit in the middle for the Thief: cards NOT already dealt to
+ * a player, plus plain Villager/Werewolf which may always be duplicated. With
+ * `strictUnused` the duplication allowance is dropped; `exclude` removes any
+ * card the Actor has already taken.
+ */
+export function eligibleMiddleCards(
+  counts: Record<string, number>,
+  { exclude = [], strictUnused = false }: CardPoolOpts = {},
+): Character[] {
+  const blocked = new Set(exclude);
+  return CHARACTERS.filter((c) => {
+    if (blocked.has(c.id)) return false;
+    const unused = (counts[c.id] ?? 0) === 0;
+    if (strictUnused) return unused;
+    return c.id === "villager" || c.id === "werewolf" || unused;
+  });
 }
 
 /** Two random distinct-ish eligible middle cards for the Thief. */
-export function randomMiddleCards(counts: Record<string, number>): string[] {
-  const pool = eligibleMiddleCards(counts);
+export function randomMiddleCards(counts: Record<string, number>, opts?: CardPoolOpts): string[] {
+  const pool = eligibleMiddleCards(counts, opts);
   if (pool.length < 2) return pool.map((c) => c.id);
   const shuffled = shuffle(pool);
   return [shuffled[0].id, shuffled[1].id];
@@ -59,16 +79,26 @@ export function randomMiddleCards(counts: Record<string, number>): string[] {
 /**
  * Village-team roles the Actor may borrow: unused village cards (plus plain
  * Villager, which may repeat). The Actor never borrows a wolf or solo card.
+ * With `strictUnused` the Villager repeat is dropped; `exclude` removes any card
+ * the Thief has already taken.
  */
-export function eligibleActorCards(counts: Record<string, number>): Character[] {
-  return CHARACTERS.filter(
-    (c) => c.team === "village" && c.id !== "actor" && (c.id === "villager" || (counts[c.id] ?? 0) === 0),
-  );
+export function eligibleActorCards(
+  counts: Record<string, number>,
+  { exclude = [], strictUnused = false }: CardPoolOpts = {},
+): Character[] {
+  const blocked = new Set(exclude);
+  return CHARACTERS.filter((c) => {
+    if (c.team !== "village" || c.id === "actor") return false;
+    if (blocked.has(c.id)) return false;
+    const unused = (counts[c.id] ?? 0) === 0;
+    if (strictUnused) return unused;
+    return c.id === "villager" || unused;
+  });
 }
 
 /** Three random distinct eligible cards for the Actor's three nights. */
-export function randomActorCards(counts: Record<string, number>): string[] {
-  const pool = eligibleActorCards(counts);
+export function randomActorCards(counts: Record<string, number>, opts?: CardPoolOpts): string[] {
+  const pool = eligibleActorCards(counts, opts);
   return shuffle(pool)
     .slice(0, 3)
     .map((c) => c.id);
@@ -122,10 +152,17 @@ export function setupError(draft: SetupDraft): string | null {
   const wolves = werewolfCount(draft.counts);
   if (wolves === 0) return "Add at least one werewolf.";
   if (wolves * 2 >= slots) return "Too many werewolves — the village can't win.";
-  if ((draft.counts["thief"] ?? 0) > 0 && draft.middleCards.filter(Boolean).length < 2)
+  const hasThief = (draft.counts["thief"] ?? 0) > 0;
+  const hasActor = (draft.counts["actor"] ?? 0) > 0;
+  if (hasThief && draft.middleCards.filter(Boolean).length < 2)
     return "Pick two middle cards for the Thief (or hit Randomize).";
-  if ((draft.counts["actor"] ?? 0) > 0 && draft.actorCards.filter(Boolean).length < 3)
+  if (hasActor && draft.actorCards.filter(Boolean).length < 3)
     return "Pick three cards for the Actor (or hit Randomize).";
+  if (hasThief && hasActor) {
+    const shared = new Set(draft.actorCards.filter(Boolean));
+    if (draft.middleCards.some((id) => id && shared.has(id)))
+      return "The Thief and Actor can't be dealt the same card.";
+  }
   return null;
 }
 

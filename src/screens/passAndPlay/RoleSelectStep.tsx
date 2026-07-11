@@ -163,6 +163,13 @@ export default function RoleSelectStep({
   const recWolves = recommendedWolves(slots);
   const error = setupError(draft);
 
+  // When both share a table, their pools must be disjoint and strictly unused.
+  const hasThief = (draft.counts["thief"] ?? 0) > 0;
+  const hasActor = (draft.counts["actor"] ?? 0) > 0;
+  const bothPresent = hasThief && hasActor;
+  const thiefOpts = { exclude: hasActor ? draft.actorCards : [], strictUnused: bothPresent };
+  const actorOpts = { exclude: hasThief ? draft.middleCards : [], strictUnused: bothPresent };
+
   const bump = (id: string, delta: number) =>
     setDraft((prev) => ({
       ...prev,
@@ -234,12 +241,18 @@ export default function RoleSelectStep({
             keep the Thief. Villager and Werewolf may repeat.
           </p>
           <CardPicker
-            eligible={eligibleMiddleCards(draft.counts)}
+            eligible={eligibleMiddleCards(draft.counts, thiefOpts)}
             count={2}
             value={draft.middleCards}
             onChange={(ids) => setDraft((prev) => ({ ...prev, middleCards: ids }))}
             onRandomize={() =>
-              setDraft((prev) => ({ ...prev, middleCards: randomMiddleCards(prev.counts) }))
+              setDraft((prev) => ({
+                ...prev,
+                middleCards: randomMiddleCards(prev.counts, {
+                  exclude: (prev.counts["actor"] ?? 0) > 0 ? prev.actorCards : [],
+                  strictUnused: (prev.counts["actor"] ?? 0) > 0,
+                }),
+              }))
             }
             randomizeLabel="🎲 Randomize middle cards"
           />
@@ -252,16 +265,22 @@ export default function RoleSelectStep({
             Actor's three roles
           </h3>
           <p className="mb-2 text-xs text-moss-300 italic">
-            Three unused village cards. Each of the first three nights the Actor secretly becomes a
-            random one of these; after that they are a plain Villager.
+            Three unused village cards. Each of the first three nights the Actor turns one over and
+            plays it that night; once all three are used they are a plain Villager.
           </p>
           <CardPicker
-            eligible={eligibleActorCards(draft.counts)}
+            eligible={eligibleActorCards(draft.counts, actorOpts)}
             count={3}
             value={draft.actorCards}
             onChange={(ids) => setDraft((prev) => ({ ...prev, actorCards: ids }))}
             onRandomize={() =>
-              setDraft((prev) => ({ ...prev, actorCards: randomActorCards(prev.counts) }))
+              setDraft((prev) => ({
+                ...prev,
+                actorCards: randomActorCards(prev.counts, {
+                  exclude: (prev.counts["thief"] ?? 0) > 0 ? prev.middleCards : [],
+                  strictUnused: (prev.counts["thief"] ?? 0) > 0,
+                }),
+              }))
             }
             randomizeLabel="🎲 Randomize Actor cards"
           />
