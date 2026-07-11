@@ -32,11 +32,12 @@ function ArtWindow({ character }: { character: Character }) {
   return (
     <div
       className="relative overflow-hidden rounded-md border bg-night-950"
-      style={{ borderColor: `${TEAM_HEX[character.team]}55`, aspectRatio: "4 / 3" }}
+      style={{ borderColor: `${TEAM_HEX[character.team]}55`, aspectRatio: "1 / 1" }}
     >
       {src ? (
-        // Real full-card art is composed to fill; a bare head portrait is shown
-        // whole (contained) so the face is never cropped by the wide art window.
+        // The window is square to match the square head portraits, so a
+        // contained head fills it edge-to-edge with no pillar-boxing and is
+        // never cropped. Real full-card art is composed to fill (cover).
         <img
           src={src}
           alt={character.name}
@@ -148,7 +149,7 @@ export default function GameCard({
       className="w-[300px] max-w-[82vw] [perspective:1400px]"
     >
       <div
-        className="relative aspect-[5/7] w-full transition-transform duration-700 [transform-style:preserve-3d]"
+        className="relative aspect-[5/9] w-full transition-transform duration-700 [transform-style:preserve-3d]"
         style={{ transform: flipped ? "rotateY(180deg)" : "none" }}
       >
         <CardFront character={character} />

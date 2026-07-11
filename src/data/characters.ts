@@ -292,7 +292,7 @@ export const CHARACTERS: Character[] = [
     nightOrder: 5,
     description: "Never sleeps in her own bed — each night she wanders into someone else's.",
     ability:
-      "Each night, visits another living player (not herself, not twice in a row). Safe if the wolves strike her own house, but dies if they strike the one she visited — and learns only whether that player used a night power.",
+      "Each night, visits another living player. Safe if the wolves strike her own house, but dies if they strike the one she visited — and learns only whether that player used a night power.",
   },
 
   // ──────────────────────── Werewolf Team ────────────────────────
