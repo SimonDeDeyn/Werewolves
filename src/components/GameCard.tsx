@@ -195,8 +195,13 @@ export default function GameCard({
        * siblings don't overlap — without an overflow clip that would cut off the
        * card's corners as they swing out of plane during the 3D flip.
        */}
+      {/*
+       * A deep perspective keeps the flip nearly orthographic, so the near face
+       * barely magnifies past the card's box mid-rotation — the corners stay
+       * inside the viewport and can't be shaved by the body's overflow-x clip.
+       */}
       <div
-        className="absolute top-0 left-0 [perspective:1400px]"
+        className="absolute top-0 left-0 [perspective:3200px]"
         style={{
           width: `${CARD_W}px`,
           height: `${CARD_H}px`,
