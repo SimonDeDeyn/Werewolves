@@ -1252,7 +1252,7 @@ export default function NightPhase({
             <div className="flex justify-center">{actorSlot(2)}</div>
           </div>
           {picked && (
-            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+            <button className="btn-lantern mt-1 px-6 py-3.5 text-lg" onClick={advanceWake}>
               Done →
             </button>
           )}
@@ -1281,13 +1281,15 @@ export default function NightPhase({
           {referenceButtons}
           <div className="flex flex-row items-start justify-center gap-4">
             {cards.map((c, i) => (
-              <div key={i} className="flex flex-col items-center gap-2">
+              // gap-5 keeps the button clear of the card's bottom edge as it
+              // magnifies past its box during the 3D flip.
+              <div key={i} className="flex flex-col items-center gap-5">
                 <GameCard character={c} initialFlipped className="w-[42vw] max-w-[160px]" />
                 <button
                   className="btn-lantern px-4 py-2 text-sm"
                   onClick={() => confirmThief(thief, c.id)}
                 >
-                  Choose this one →
+                  Choose this role →
                 </button>
               </div>
             ))}

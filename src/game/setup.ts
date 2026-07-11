@@ -163,6 +163,16 @@ export function setupError(draft: SetupDraft): string | null {
     if (draft.middleCards.some((id) => id && shared.has(id)))
       return "The Thief and Actor can't be dealt the same card.";
   }
+  // A unique card set aside for the Thief/Actor pile can't also be dealt to a
+  // player; Villager/Werewolf have plenty of copies, so they may repeat.
+  const reserved = [...(hasThief ? draft.middleCards : []), ...(hasActor ? draft.actorCards : [])];
+  for (const id of reserved) {
+    if (!id || id === "villager" || id === "werewolf") continue;
+    if ((draft.counts[id] ?? 0) > 0) {
+      const name = CHARACTERS.find((c) => c.id === id)?.name ?? "That role";
+      return `${name} can't be both dealt to a player and set aside for the Thief/Actor.`;
+    }
+  }
   return null;
 }
 

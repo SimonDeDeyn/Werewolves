@@ -37,11 +37,14 @@ function StepBtn({ label, onClick, disabled }: { label: string; onClick: () => v
 function RoleBar({
   character,
   count,
+  locked = false,
   onInc,
   onDec,
 }: {
   character: Character;
   count: number;
+  /** Reserved as a Thief/Actor card — can't also be dealt to a player. */
+  locked?: boolean;
   onInc: () => void;
   onDec: () => void;
 }) {
@@ -57,13 +60,17 @@ function RoleBar({
       <div className="min-w-0 flex-1">
         <p className="truncate font-display text-sm text-moon-100">{character.name}</p>
         <p className="truncate text-[0.65rem] tracking-wide text-moss-300 uppercase">
-          {group > 1 ? `${group} seats · ${wakes}` : wakes}
+          {locked ? "in the Thief / Actor pile" : group > 1 ? `${group} seats · ${wakes}` : wakes}
         </p>
       </div>
       <div className="flex items-center gap-2">
         <StepBtn label="−" onClick={onDec} disabled={count === 0} />
         <span className="w-5 text-center font-display text-moon-100">{count}</span>
-        <StepBtn label="+" onClick={onInc} disabled={count >= (character.maxCount ?? 1)} />
+        <StepBtn
+          label="+"
+          onClick={onInc}
+          disabled={locked || count >= (character.maxCount ?? 1)}
+        />
       </div>
     </div>
   );
@@ -170,6 +177,13 @@ export default function RoleSelectStep({
   const thiefOpts = { exclude: hasActor ? draft.actorCards : [], strictUnused: bothPresent };
   const actorOpts = { exclude: hasThief ? draft.middleCards : [], strictUnused: bothPresent };
 
+  // A unique card set aside for the Thief/Actor pile can't also be dealt to a
+  // player — lock its stepper. Villager/Werewolf repeat freely, so never lock.
+  const reserved = new Set(
+    [...(hasThief ? draft.middleCards : []), ...(hasActor ? draft.actorCards : [])].filter(Boolean),
+  );
+  const isReserved = (id: string) => id !== "villager" && id !== "werewolf" && reserved.has(id);
+
   const bump = (id: string, delta: number) =>
     setDraft((prev) => ({
       ...prev,
@@ -223,6 +237,7 @@ export default function RoleSelectStep({
                 key={c.id}
                 character={c}
                 count={draft.counts[c.id] ?? 0}
+                locked={isReserved(c.id)}
                 onInc={() => bump(c.id, c.groupSize ?? 1)}
                 onDec={() => bump(c.id, -(c.groupSize ?? 1))}
               />

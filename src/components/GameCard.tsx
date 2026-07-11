@@ -186,11 +186,17 @@ export default function GameCard({
       onClick={onClick ?? (() => setInternalFlipped((f) => !f))}
       disabled={disabled}
       aria-label={controlled ? `${character.name} card` : `${character.name} card — tap to flip`}
-      className={`${className} block overflow-hidden disabled:cursor-default`}
+      className={`${className} relative block disabled:cursor-default`}
       style={{ aspectRatio: `${CARD_W} / ${CARD_H}` }}
     >
+      {/*
+       * The scaled layer keeps its full 300×540 design size but is taken out of
+       * flow (absolute), so the button reserves only the scaled footprint and
+       * siblings don't overlap — without an overflow clip that would cut off the
+       * card's corners as they swing out of plane during the 3D flip.
+       */}
       <div
-        className="[perspective:1400px]"
+        className="absolute top-0 left-0 [perspective:1400px]"
         style={{
           width: `${CARD_W}px`,
           height: `${CARD_H}px`,
