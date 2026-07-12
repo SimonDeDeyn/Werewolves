@@ -7,7 +7,7 @@ import NoticeBoard, { type BoardItem } from "./NoticeBoard";
 import GameCard from "../../components/GameCard";
 
 type Phase = "night" | "day";
-type View = "wake" | "select" | "board";
+type View = "wake" | "select" | "witch" | "hunter" | "board";
 
 /**
  * Roles with an implemented night wake-up step. When a night begins the app
@@ -51,6 +51,75 @@ const SERVANT_LABELS: Record<ServantRole, string> = {
   "devoted-servant": "Devoted Servant",
 };
 
+/** A small rolled-parchment glyph for the aftermath scroll toggle. */
+function ScrollGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M7 3h9a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H9a2 2 0 0 1-2-2V3Z" />
+      <path d="M7 3a2 2 0 0 0-2 2v2h2" />
+      <path d="M10 8h5M10 12h5" />
+    </svg>
+  );
+}
+
+/**
+ * The aftermath "scroll" — a moderator's private account of everything the app
+ * knows happened this phase. Closed by default; the moderator unfurls it to
+ * refresh their memory, then decides what (if anything) to tell the table.
+ */
+function NightScroll({
+  open,
+  onToggle,
+  lines,
+  isNight,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  lines: string[];
+  isNight: boolean;
+}) {
+  return (
+    <div className="mx-auto mt-3 w-full max-w-sm">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center justify-center gap-2 rounded-full border border-bark-400 bg-night-800/70 px-4 py-2 text-sm text-moon-200 transition-colors hover:border-moon-200"
+      >
+        <ScrollGlyph />
+        {open ? "Roll up the scroll" : `Unfurl ${isNight ? "the night's" : "the day's"} scroll`}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-bark-400 bg-gradient-to-b from-bark-600/50 to-night-900/70 p-4 text-left">
+          <p className="mb-2 font-display text-xs tracking-[0.3em] text-bark-300 uppercase">
+            {isNight ? "The night's account" : "The day's account"}
+          </p>
+          <ul className="space-y-1.5">
+            {lines.map((line, i) => (
+              <li key={i} className="flex gap-2 text-sm leading-snug text-moon-200">
+                <span aria-hidden className="mt-0.5 shrink-0 text-moss-400">
+                  ›
+                </span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** A full capture of the mutable game state, so any screen can be restored. */
 interface Snapshot {
   dead: string[];
@@ -71,10 +140,17 @@ interface Snapshot {
   lastProtected: string | null;
   sleepwalkerVisit: string | null;
   lastVisit: string | null;
+  seerViews: string[];
   actorUsedIdx: number[];
   actorPick: number | null;
   wolfFatherUsed: boolean;
+  witchHealUsed: boolean;
+  witchPoisonUsed: boolean;
+  witchHeal: string | null;
+  witchPoison: string | null;
   pending: string[];
+  pendingHunters: string[];
+  lastAttacked: string[];
   lastDeaths: string[];
   lastNotes: string[];
   roleOverride: Record<string, string>;
@@ -150,6 +226,9 @@ export default function NightPhase({
   // Sleepwalker's visit this night, and last night's (can't be repeated).
   const [sleepwalkerVisit, setSleepwalkerVisit] = useState<string | null>(null);
   const [lastVisit, setLastVisit] = useState<string | null>(null);
+  // Players the Seer glimpsed this night, so the scroll can recount it. Cleared
+  // when the night ends.
+  const [seerViews, setSeerViews] = useState<string[]>([]);
   // Actor: which of the three fixed card positions are spent, and tonight's pick.
   // Positions stay put across nights (0/1 top row, 2 bottom-centre) so spent
   // cards leave a gap and the survivors keep their placement.
@@ -157,7 +236,18 @@ export default function NightPhase({
   const [actorPick, setActorPick] = useState<number | null>(null);
   // Accursed Wolf-Father's one-time villager-to-wolf conversion.
   const [wolfFatherUsed, setWolfFatherUsed] = useState(false);
+  // The Witch's two once-per-game potions, and her picks on the current night.
+  const [witchHealUsed, setWitchHealUsed] = useState(false);
+  const [witchPoisonUsed, setWitchPoisonUsed] = useState(false);
+  const [witchHeal, setWitchHeal] = useState<string | null>(null);
+  const [witchPoison, setWitchPoison] = useState<string | null>(null);
   const [pending, setPending] = useState<string[]>([]);
+  // Hunters slain in the night who owe a public shot once the village wakes —
+  // resolved on the dawn board, not silently at night. Emptied as each fires.
+  const [pendingHunters, setPendingHunters] = useState<string[]>([]);
+  // Who the night's kill marked (before saves) / who the day condemned — kept so
+  // the aftermath scroll can report the attack even when the target survived.
+  const [lastAttacked, setLastAttacked] = useState<string[]>([]);
   const [lastDeaths, setLastDeaths] = useState<string[]>([]);
   const [lastNotes, setLastNotes] = useState<string[]>([]);
 
@@ -180,6 +270,8 @@ export default function NightPhase({
 
   // Read-only moderator reference overlay: night wake order or the full roster.
   const [reference, setReference] = useState<"wake" | "roster" | null>(null);
+  // Whether the aftermath "scroll" (full account of the night) is unfurled.
+  const [scrollOpen, setScrollOpen] = useState(false);
 
   const [res, setRes] = useState<Resolution | null>(null);
   const [resPick, setResPick] = useState<string | null>(null);
@@ -213,10 +305,17 @@ export default function NightPhase({
     lastProtected,
     sleepwalkerVisit,
     lastVisit,
+    seerViews,
     actorUsedIdx,
     actorPick,
     wolfFatherUsed,
+    witchHealUsed,
+    witchPoisonUsed,
+    witchHeal,
+    witchPoison,
     pending,
+    pendingHunters,
+    lastAttacked,
     lastDeaths,
     lastNotes,
     roleOverride,
@@ -254,10 +353,17 @@ export default function NightPhase({
     setLastProtected(prev.lastProtected);
     setSleepwalkerVisit(prev.sleepwalkerVisit);
     setLastVisit(prev.lastVisit);
+    setSeerViews(prev.seerViews);
     setActorUsedIdx(prev.actorUsedIdx);
     setActorPick(prev.actorPick);
     setWolfFatherUsed(prev.wolfFatherUsed);
+    setWitchHealUsed(prev.witchHealUsed);
+    setWitchPoisonUsed(prev.witchPoisonUsed);
+    setWitchHeal(prev.witchHeal);
+    setWitchPoison(prev.witchPoison);
+    setPendingHunters(prev.pendingHunters);
     setPending(prev.pending);
+    setLastAttacked(prev.lastAttacked);
     setLastDeaths(prev.lastDeaths);
     setLastNotes(prev.lastNotes);
     setRoleOverride(prev.roleOverride);
@@ -378,11 +484,13 @@ export default function NightPhase({
     if (r.phase === "day" && !r.servantsDone && availableServants(r).length) {
       return { kind: "servantHub" };
     }
-    // A claimed player's death-power is absorbed by the Devoted Servant who took it.
+    // The Hunter fires at once only when felled by a waking village (the day
+    // vote). A Hunter slain in the night takes their shot in the morning instead
+    // (queued in commit, resolved on the dawn board), so it plays out in public.
     const hunter = r.deaths.find(
       (p) => roleOf(p) === "hunter" && !r.huntersFired.includes(p) && !r.claimed.includes(p),
     );
-    if (hunter) return { kind: "hunter", player: hunter };
+    if (r.phase === "day" && hunter) return { kind: "hunter", player: hunter };
     return null;
   };
 
@@ -402,6 +510,12 @@ export default function NightPhase({
   const commit = (r: Resolution) => {
     setDead((d) => [...d, ...r.deaths]);
     setLastDeaths(r.deaths);
+    // Hunters slain in the night owe a shot come morning — queue them for the
+    // dawn board rather than firing silently before the village wakes.
+    if (r.phase === "night") {
+      const fallen = r.deaths.filter((p) => roleOf(p) === "hunter");
+      if (fallen.length) setPendingHunters((h) => [...h, ...fallen]);
+    }
     let notes = r.notes;
     // The Elder felled by the village's own vote strips every villager of power.
     if (r.phase === "day" && !powersDisabled && r.deaths.some((p) => roleOf(p) === "elder")) {
@@ -446,13 +560,24 @@ export default function NightPhase({
     }
   };
 
-  const record = () => {
+  const record = (witch?: { heal: string | null; poison: string | null }) => {
     pushHistory();
     const raw = pending;
     setPending([]);
+    // Remember who was marked this phase (wolves' victims / the condemned) so the
+    // scroll can recount the attack even for those who ended up surviving.
+    setLastAttacked(raw);
 
     const notes: string[] = [];
     let deaths = [...raw];
+
+    // The Witch's healing potion pulls one of the wolves' victims back before any
+    // other night power resolves.
+    if (witch?.heal) {
+      deaths = deaths.filter((p) => p !== witch.heal);
+      setWitchHealUsed(true);
+      notes.push(`The Witch's healing brew pulls ${witch.heal} back from the brink.`);
+    }
 
     if (phase === "night") {
       // The Defender's shield turns the wolves away from their charge (wolves only).
@@ -548,6 +673,14 @@ export default function NightPhase({
       }
     }
 
+    // The Witch's poison is a direct kill — immune to the wolf-only protections
+    // above, but it still triggers heartbreak, the Hunter, and the like.
+    if (witch?.poison) {
+      setWitchPoisonUsed(true);
+      if (!deaths.includes(witch.poison)) deaths = [...deaths, witch.poison];
+      notes.push(`The Witch's poison takes ${witch.poison}.`);
+    }
+
     step({
       phase,
       deaths,
@@ -560,6 +693,32 @@ export default function NightPhase({
       wolfFatherDone: false,
       notes,
     });
+  };
+
+  /**
+   * From the kill screen: at night, if a living Witch still holds a potion, she
+   * wakes to answer the wolves' strike before the deaths are resolved. Otherwise
+   * (or by day) go straight to resolution.
+   */
+  const beginKill = () => {
+    if (isNight && !powersDisabled) {
+      const witch = players.find((p) => roleOf(p) === "witch" && !dead.includes(p));
+      if (witch && (!witchHealUsed || !witchPoisonUsed)) {
+        pushHistory();
+        setWitchHeal(null);
+        setWitchPoison(null);
+        setView("witch");
+        return;
+      }
+    }
+    record();
+  };
+
+  /** Witch confirms her potions; the picks fold into the night's resolution. */
+  const confirmWitch = () => {
+    record({ heal: witchHeal, poison: witchPoison });
+    setWitchHeal(null);
+    setWitchPoison(null);
   };
 
   /** Servant: dies in place of a condemned player, sparing them. */
@@ -609,6 +768,66 @@ export default function NightPhase({
     pushHistory();
     const deaths = target ? [...res.deaths, target] : res.deaths;
     step({ ...res, deaths, huntersFired: [...res.huntersFired, hunter] });
+  };
+
+  /** From the dawn board: open the morning shot for the next queued Hunter. */
+  const startMorningHunter = () => {
+    pushHistory();
+    setResPick(null);
+    setView("hunter");
+  };
+
+  /**
+   * A night-slain Hunter fires in the morning, in front of the woken village.
+   * The victim (and any lover pulled with them) dies now; a Hunter caught this
+   * way joins the queue to fire next. Then we return to the dawn board with the
+   * toll updated.
+   */
+  const morningShot = (target: string | null) => {
+    pushHistory();
+    const [shooter, ...restQueue] = pendingHunters;
+    let queue = restQueue;
+    const newDeaths: string[] = [];
+    const notes: string[] = [];
+    if (target && !dead.includes(target)) {
+      newDeaths.push(target);
+      notes.push(`${shooter} — the Hunter — takes ${target} down with a dying shot.`);
+      // A lover of the target dies of heartbreak alongside them.
+      if (lovers.length === 2) {
+        const [a, b] = lovers;
+        const partner = target === a ? b : target === b ? a : null;
+        if (partner && !dead.includes(partner) && !newDeaths.includes(partner)) {
+          newDeaths.push(partner);
+          notes.push(`${partner} dies of heartbreak, bound to ${target}.`);
+        }
+      }
+      // Any Hunter felled by this shot fires next, still in the morning.
+      queue = [...queue, ...newDeaths.filter((p) => roleOf(p) === "hunter")];
+      // A slain role model turns the Wild Child, exactly as in the night resolution.
+      if (roleModel && newDeaths.includes(roleModel)) {
+        const cubs = players.filter(
+          (p) =>
+            roleOf(p) === "wild-child" &&
+            !dead.includes(p) &&
+            !newDeaths.includes(p) &&
+            !turnedWolves.includes(p),
+        );
+        if (cubs.length) {
+          setTurnedWolves((w) => [...w, ...cubs]);
+          notes.push(
+            `${cubs.join(" & ")}'s role model has fallen — the Wild Child turns werewolf.`,
+          );
+        }
+      }
+    } else {
+      notes.push(`${shooter} — the Hunter — holds their fire.`);
+    }
+    if (newDeaths.length) setDead((d) => [...d, ...newDeaths]);
+    setLastDeaths((prev) => [...prev, ...newDeaths]);
+    setLastNotes((prev) => [...prev, ...notes]);
+    setPendingHunters(queue);
+    setResPick(null);
+    setView("board");
   };
 
   /** Accursed Wolf-Father: convert a slain villager into a wolf, or let them die. */
@@ -704,6 +923,12 @@ export default function NightPhase({
   /** Defender shields their chosen charge for the night, then moves on. */
   const confirmDefend = () => {
     if (wakePick) setProtectedPlayer(wakePick);
+    advanceWake();
+  };
+
+  /** Seer's glimpse is logged for the aftermath scroll, then moves on. */
+  const confirmSeer = () => {
+    if (wakePick) setSeerViews((v) => [...v, wakePick]);
     advanceWake();
   };
 
@@ -1481,7 +1706,7 @@ export default function NightPhase({
               Show this to the Seer, then hide it and send them back to sleep.
             </p>
             {seen && <GameCard character={seen} initialFlipped />}
-            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={confirmSeer}>
               Done →
             </button>
             {undoRow}
@@ -1687,6 +1912,156 @@ export default function NightPhase({
     );
   }
 
+  /* ---------------------------- Hunter's shot ---------------------------- */
+  if (view === "hunter") {
+    const shooter = pendingHunters[0];
+    const targets = players.filter((p) => !dead.includes(p));
+    return (
+      <div className="flex flex-col items-center gap-4 py-2 text-center">
+        <h1 className="font-display text-2xl font-bold tracking-wider text-blood-500">
+          The Hunter takes aim
+        </h1>
+        <p className="mx-auto max-w-sm text-sm text-moss-200">
+          Morning finds <span className="text-moon-100">{shooter}</span> dead — the Hunter. With a
+          last breath they take one soul down in front of the whole village. Choose a target, or
+          hold fire.
+        </p>
+        {referenceButtons}
+        <div className="flex flex-wrap justify-center gap-2">
+          {targets.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setResPick(t)}
+              className={`rounded-full border px-3 py-1.5 text-sm ${
+                resPick === t
+                  ? "border-blood-500 bg-blood-700/40 text-moon-100 ring-2 ring-blood-500"
+                  : "border-pine-600 text-moss-200 hover:border-moss-400"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="flex w-full max-w-sm gap-3">
+          <button className="btn-lantern flex-1 px-4 py-3" onClick={() => morningShot(null)}>
+            Hold fire
+          </button>
+          <button
+            className="btn-lantern flex-[2] px-4 py-3 text-lg"
+            disabled={!resPick}
+            onClick={() => morningShot(resPick)}
+          >
+            {resPick ? `Take ${resPick} down →` : "Choose a target"}
+          </button>
+        </div>
+        {undoRow}
+        {referenceOverlay}
+      </div>
+    );
+  }
+
+  /* ----------------------------- Witch potions --------------------------- */
+  if (view === "witch") {
+    const victims = pending;
+    const poisonPool = players.filter((p) => !dead.includes(p));
+    const canHeal = !witchHealUsed;
+    const canPoison = !witchPoisonUsed;
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Witch wakes
+          </h1>
+          <p className="mx-auto max-w-sm text-sm text-moss-200">
+            Wake the Witch and show her the night's victim. She may spend her healing brew, her
+            poison — both, or neither.
+          </p>
+          <div className="mt-3">{referenceButtons}</div>
+        </div>
+
+        {/* Upper half — the healing potion revives a victim of the wolves. */}
+        <div className="rounded-lg border border-moss-400/50 bg-night-800/40 p-4">
+          <p className="mb-2 text-center text-xs tracking-[0.2em] text-moss-300 uppercase">
+            Struck by the wolves
+          </p>
+          {victims.length ? (
+            <div className="flex flex-wrap justify-center gap-2">
+              {victims.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  disabled={!canHeal}
+                  onClick={() => setWitchHeal((h) => (h === v ? null : v))}
+                  className={`rounded-full border px-3 py-1.5 text-sm disabled:opacity-40 ${
+                    witchHeal === v
+                      ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                      : "border-pine-600 text-moss-200 hover:border-moss-400"
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-sm text-moss-400 italic">
+              The wolves took no one tonight.
+            </p>
+          )}
+          <p className="mt-2 text-center text-xs text-moss-400">
+            {!canHeal
+              ? "Her healing potion is already spent."
+              : witchHeal
+                ? `She revives ${witchHeal} with the life potion.`
+                : "Tap a victim to revive them — the healing potion works only once."}
+          </p>
+        </div>
+
+        {/* Lower half — the poison potion kills anyone she names. */}
+        <div className="rounded-lg border border-blood-700/60 bg-night-800/40 p-4">
+          <p className="mb-2 text-center text-xs tracking-[0.2em] text-blood-500 uppercase">
+            The death potion
+          </p>
+          {canPoison ? (
+            <>
+              <div className="flex flex-wrap justify-center gap-2">
+                {poisonPool.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setWitchPoison((p) => (p === t ? null : t))}
+                    className={`rounded-full border px-3 py-1.5 text-sm ${
+                      witchPoison === t
+                        ? "border-blood-500 bg-blood-700/40 text-moon-100 ring-2 ring-blood-500"
+                        : "border-pine-600 text-moss-200 hover:border-moss-400"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-center text-xs text-moss-400">
+                {witchPoison
+                  ? `She poisons ${witchPoison} — they die at dawn.`
+                  : "Tap someone to poison, or leave it — the poison works only once."}
+              </p>
+            </>
+          ) : (
+            <p className="text-center text-sm text-moss-400 italic">
+              Her poison potion is already spent.
+            </p>
+          )}
+        </div>
+
+        <button className="btn-lantern w-full px-4 py-3 text-lg" onClick={confirmWitch}>
+          {witchHeal || witchPoison ? "Seal her choices →" : "She stays her hand →"}
+        </button>
+        {undoRow}
+        {referenceOverlay}
+      </div>
+    );
+  }
+
   /* --------------------------- Selection screen -------------------------- */
   if (view === "select") {
     return (
@@ -1722,7 +2097,7 @@ export default function NightPhase({
           <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
             Quit
           </button>
-          <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={record}>
+          <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={beginKill}>
             {pending.length
               ? isNight
                 ? "Record the kill →"
@@ -1743,8 +2118,39 @@ export default function NightPhase({
     ? lastDeaths.map((p) => `${p} — the ${roleName(p)}`).join(", ")
     : null;
 
+  // Join names as "A", "A and B", or "A, B and C" for the scroll's prose.
+  const listNames = (names: string[]) =>
+    names.length <= 1
+      ? names.join("")
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+  // Everything the app knows happened this phase, for the scroll. Order: the
+  // attack, who fell (with their role), then the mechanical footnotes.
+  const scrollLines: string[] = [];
+  if (isNight) {
+    for (const p of seerViews) {
+      scrollLines.push(`The Seer read ${p}'s fate — the ${roleName(p)}.`);
+    }
+    scrollLines.push(
+      lastAttacked.length
+        ? `The werewolves set upon ${listNames(lastAttacked)}.`
+        : "The werewolves prowled but marked no victim.",
+    );
+  } else if (lastAttacked.length) {
+    scrollLines.push(`The village condemned ${listNames(lastAttacked)}.`);
+  }
+  if (lastDeaths.length) {
+    for (const p of lastDeaths) scrollLines.push(`${p} fell — the ${roleName(p)}.`);
+  } else {
+    scrollLines.push(
+      isNight ? "When dawn broke, everyone still drew breath." : "No one was sent to the gallows.",
+    );
+  }
+  for (const n of lastNotes) scrollLines.push(n);
+
   const advance = () => {
     pushHistory();
+    setScrollOpen(false);
     if (phase === "night") {
       setPhase("day");
       setView("select");
@@ -1753,6 +2159,7 @@ export default function NightPhase({
       setProtectedPlayer(null);
       setLastVisit(sleepwalkerVisit);
       setSleepwalkerVisit(null);
+      setSeerViews([]);
       setActorPick(null);
     } else {
       const nextRound = round + 1;
@@ -1763,6 +2170,11 @@ export default function NightPhase({
       setView(q.length ? "wake" : "select");
     }
   };
+
+  // A Hunter slain in the night still owes a morning shot: hold the board (and
+  // any premature win) until they fire, since their shot can change the outcome.
+  const pendingShot = isNight && pendingHunters.length > 0;
+  const shownResult = pendingShot ? null : result;
 
   return (
     <div className="flex flex-col gap-4">
@@ -1779,21 +2191,18 @@ export default function NightPhase({
               ? "Dawn breaks — everyone survived the night."
               : "The village spares everyone today."}
         </p>
-        {lastNotes.length > 0 && (
-          <div className="mx-auto mt-2 max-w-sm space-y-1">
-            {lastNotes.map((n, i) => (
-              <p key={i} className="text-xs text-moss-300 italic">
-                {n}
-              </p>
-            ))}
-          </div>
-        )}
+        <NightScroll
+          open={scrollOpen}
+          onToggle={() => setScrollOpen((o) => !o)}
+          lines={scrollLines}
+          isNight={isNight}
+        />
         <div className="mt-3">{referenceButtons}</div>
       </div>
 
       <NoticeBoard items={boardItems} />
 
-      {result ? (
+      {shownResult ? (
         <div
           className="rounded-lg border p-4 text-center"
           style={{
@@ -1823,7 +2232,7 @@ export default function NightPhase({
         </div>
       ) : null}
 
-      {judgeAvailable && !result && (
+      {judgeAvailable && !result && !pendingShot && (
         <button
           className="btn-lantern w-full px-4 py-2.5 text-sm"
           onClick={secondVote}
@@ -1833,7 +2242,19 @@ export default function NightPhase({
       )}
 
       <div className="flex gap-3">
-        {result ? (
+        {pendingShot ? (
+          <>
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
+              Quit
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              onClick={startMorningHunter}
+            >
+              The Hunter takes their shot →
+            </button>
+          </>
+        ) : shownResult ? (
           <>
             <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
               Main menu
