@@ -7,7 +7,7 @@ import NoticeBoard, { type BoardItem } from "./NoticeBoard";
 import GameCard from "../../components/GameCard";
 
 type Phase = "night" | "day";
-type View = "wake" | "select" | "witch" | "hunter" | "board";
+type View = "wake" | "select" | "witch" | "hunter" | "transition" | "board";
 
 /**
  * Roles with an implemented night wake-up step. When a night begins the app
@@ -388,23 +388,28 @@ export default function NightPhase({
   const teamOf = (p: string) =>
     turnedWolves.includes(p) ? "werewolf" : byId(roleOf(p))?.team;
 
-  const alive = players.filter((p) => !dead.includes(p));
-  const wolvesAlive = alive.filter((p) => teamOf(p) === "werewolf").length;
-  const result: "village" | "werewolf" | "pyromaniac" | "piper" | null = (() => {
-    const pyros = alive.filter((p) => roleOf(p) === "pyromaniac");
-    const pipers = alive.filter((p) => roleOf(p) === "piper");
+  // Who (if anyone) has won given a hypothetical set of dead players. Pulled out
+  // so a Hunter's morning shot can be checked for a game-ending result on the spot.
+  const winnerFor = (
+    deadList: string[],
+  ): "village" | "werewolf" | "pyromaniac" | "piper" | null => {
+    const live = players.filter((p) => !deadList.includes(p));
+    const wolves = live.filter((p) => teamOf(p) === "werewolf").length;
+    const pyros = live.filter((p) => roleOf(p) === "pyromaniac");
+    const pipers = live.filter((p) => roleOf(p) === "piper");
     // Piper wins the moment every other living player is charmed.
     if (pipers.length) {
-      const others = alive.filter((p) => !pipers.includes(p));
+      const others = live.filter((p) => !pipers.includes(p));
       if (others.length > 0 && others.every((p) => charmed.includes(p))) return "piper";
     }
     // Pyromaniac wins as the last soul standing.
-    if (pyros.length && alive.every((p) => roleOf(p) === "pyromaniac")) return "pyromaniac";
-    if (wolvesAlive > 0 && wolvesAlive * 2 >= alive.length) return "werewolf";
+    if (pyros.length && live.every((p) => roleOf(p) === "pyromaniac")) return "pyromaniac";
+    if (wolves > 0 && wolves * 2 >= live.length) return "werewolf";
     // The village prevails only once no wolves and no solo threats remain.
-    if (wolvesAlive === 0 && !pyros.length && !pipers.length) return "village";
+    if (wolves === 0 && !pyros.length && !pipers.length) return "village";
     return null;
-  })();
+  };
+  const result = winnerFor(dead);
 
   const boardItems: BoardItem[] = board.map((a) => {
     // A Devoted Servant / Doppelgänger keeps their ORIGINAL card on the board,
@@ -770,18 +775,11 @@ export default function NightPhase({
     step({ ...res, deaths, huntersFired: [...res.huntersFired, hunter] });
   };
 
-  /** From the dawn board: open the morning shot for the next queued Hunter. */
-  const startMorningHunter = () => {
-    pushHistory();
-    setResPick(null);
-    setView("hunter");
-  };
-
   /**
    * A night-slain Hunter fires in the morning, in front of the woken village.
    * The victim (and any lover pulled with them) dies now; a Hunter caught this
-   * way joins the queue to fire next. Then we return to the dawn board with the
-   * toll updated.
+   * way joins the queue to fire next. Once the queue empties, the day proper
+   * begins — unless the shot itself ended the game.
    */
   const morningShot = (target: string | null) => {
     pushHistory();
@@ -827,7 +825,13 @@ export default function NightPhase({
     setLastNotes((prev) => [...prev, ...notes]);
     setPendingHunters(queue);
     setResPick(null);
-    setView("board");
+    if (queue.length) {
+      setView("hunter"); // the next queued Hunter fires
+    } else if (winnerFor([...dead, ...newDeaths])) {
+      setView("board"); // the shot ended the game — show the dawn board's result
+    } else {
+      beginDay(); // no one left to fire; the day proper begins
+    }
   };
 
   /** Accursed Wolf-Father: convert a slain villager into a wolf, or let them die. */
@@ -876,6 +880,51 @@ export default function NightPhase({
     setWakePicks([]);
     setWakeShown(false);
     if (!rest.length) setView("select");
+  };
+
+  /** Open the day: switch phase, let the night's powers lapse, show the vote. */
+  const beginDay = () => {
+    setPhase("day");
+    setView("select");
+    // The night's protection / visit lapse; remember them so they can't repeat.
+    setLastProtected(protectedPlayer);
+    setProtectedPlayer(null);
+    setLastVisit(sleepwalkerVisit);
+    setSleepwalkerVisit(null);
+    setSeerViews([]);
+    setActorPick(null);
+  };
+
+  /**
+   * Leave the "village wakes / sleeps" transition and actually begin the next
+   * phase — day discussion after a night, or the next night's wake sequence.
+   */
+  const enterNextPhase = () => {
+    pushHistory();
+    if (phase === "night") {
+      beginDay();
+    } else {
+      const nextRound = round + 1;
+      setPhase("night");
+      setRound(nextRound);
+      const q = wakeRolesFor(nextRound);
+      setWakeQueue(q);
+      setView(q.length ? "wake" : "select");
+    }
+  };
+
+  /**
+   * The transition's Continue button. A Hunter felled in the night takes their
+   * shot now — after the village has woken — before the day proper begins.
+   */
+  const leaveTransition = () => {
+    if (phase === "night" && pendingHunters.length) {
+      pushHistory();
+      setResPick(null);
+      setView("hunter");
+    } else {
+      enterNextPhase();
+    }
   };
 
   /** Cupid binds the two chosen players, then the sequence moves on. */
@@ -2113,6 +2162,31 @@ export default function NightPhase({
     );
   }
 
+  /* -------------------------- Village day/night ------------------------- */
+  // A brief atmospheric beat between the aftermath board and the next phase.
+  if (view === "transition") {
+    const wakingUp = phase === "night"; // the night just ended — dawn breaks
+    return (
+      <div className="flex flex-col items-center justify-center gap-6 py-12 text-center">
+        <p className="font-display text-xs tracking-[0.4em] text-moss-300 uppercase">
+          {wakingUp ? `Dawn · day ${round}` : `Dusk · night ${round + 1}`}
+        </p>
+        <h1 className="font-display text-3xl font-bold tracking-wider text-moon-100">
+          {wakingUp ? "The village wakes up" : "The village goes to sleep"}
+        </h1>
+        <p className="max-w-sm text-sm text-moss-200">
+          {wakingUp
+            ? "Dawn spills over the rooftops. Everyone opens their eyes — time to talk, to accuse, and to vote."
+            : "Doors are barred and lanterns snuffed. The village lies down as the dark wood stirs awake."}
+        </p>
+        <button className="btn-lantern px-6 py-3.5 text-lg" onClick={leaveTransition}>
+          {wakingUp ? "Continue to day →" : "Continue to the night →"}
+        </button>
+        {undoRow}
+      </div>
+    );
+  }
+
   /* --------------------------- Aftermath board --------------------------- */
   const recap = lastDeaths.length
     ? lastDeaths.map((p) => `${p} — the ${roleName(p)}`).join(", ")
@@ -2148,27 +2222,12 @@ export default function NightPhase({
   }
   for (const n of lastNotes) scrollLines.push(n);
 
+  // From the aftermath board, step through the "village wakes / sleeps" screen
+  // before the next phase actually begins.
   const advance = () => {
     pushHistory();
     setScrollOpen(false);
-    if (phase === "night") {
-      setPhase("day");
-      setView("select");
-      // The night's protection / visit lapse; remember them so they can't repeat.
-      setLastProtected(protectedPlayer);
-      setProtectedPlayer(null);
-      setLastVisit(sleepwalkerVisit);
-      setSleepwalkerVisit(null);
-      setSeerViews([]);
-      setActorPick(null);
-    } else {
-      const nextRound = round + 1;
-      setPhase("night");
-      setRound(nextRound);
-      const q = wakeRolesFor(nextRound);
-      setWakeQueue(q);
-      setView(q.length ? "wake" : "select");
-    }
+    setView("transition");
   };
 
   // A Hunter slain in the night still owes a morning shot: hold the board (and
@@ -2242,19 +2301,7 @@ export default function NightPhase({
       )}
 
       <div className="flex gap-3">
-        {pendingShot ? (
-          <>
-            <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
-              Quit
-            </button>
-            <button
-              className="btn-lantern flex-[2] px-4 py-3 text-lg"
-              onClick={startMorningHunter}
-            >
-              The Hunter takes their shot →
-            </button>
-          </>
-        ) : shownResult ? (
+        {shownResult ? (
           <>
             <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
               Main menu
@@ -2269,7 +2316,7 @@ export default function NightPhase({
               Quit
             </button>
             <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={advance}>
-              {isNight ? "Continue to day →" : `Begin night ${round + 1} →`}
+              Continue →
             </button>
           </>
         )}
