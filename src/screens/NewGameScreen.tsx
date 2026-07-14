@@ -36,9 +36,9 @@ export default function NewGameScreen({ onBack }: { onBack: () => void }) {
   const [mode, setMode] = useState<Mode>("menu");
 
   return (
-    <main className="mx-auto min-h-dvh max-w-md px-5 pt-[calc(1.5rem+env(safe-area-inset-top))] pr-[max(1.25rem,env(safe-area-inset-right))] pb-[calc(2rem+env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))]">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[calc(1.5rem+env(safe-area-inset-top))] pr-[max(1.25rem,env(safe-area-inset-right))] pb-[calc(2rem+env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))]">
       {mode === "menu" && (
-        <div className="flex min-h-dvh flex-col justify-center gap-4">
+        <div className="flex flex-1 flex-col justify-center gap-4">
           <button className="btn-lantern self-start px-4 py-2 text-sm" onClick={onBack}>
             ← Back
           </button>
@@ -62,7 +62,7 @@ export default function NewGameScreen({ onBack }: { onBack: () => void }) {
       )}
 
       {mode === "pass" && (
-        <div className="py-2">
+        <div className="flex flex-1 flex-col py-2">
           <PassAndPlayFlow onExit={() => setMode("menu")} />
         </div>
       )}

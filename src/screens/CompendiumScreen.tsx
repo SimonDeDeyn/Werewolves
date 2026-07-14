@@ -63,8 +63,8 @@ function CharacterCard({
 export default function CompendiumScreen({ onBack }: { onBack: () => void }) {
   const [selected, setSelected] = useState<Character | null>(null);
   return (
-    <main className="mx-auto min-h-dvh max-w-5xl px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(4rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-6">
-      <header className="mb-8 flex items-center gap-4">
+    <main className="mx-auto min-h-dvh max-w-5xl px-4 pt-0 pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(4rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-6">
+      <header className="sticky top-0 z-20 mb-8 flex items-center gap-4 bg-night-950/90 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-3 backdrop-blur">
         <button className="btn-lantern px-4 py-2 text-sm" onClick={onBack}>
           ← Back
         </button>

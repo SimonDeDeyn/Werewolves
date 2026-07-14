@@ -197,7 +197,11 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
       : null;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div
+      className={`flex flex-1 flex-col gap-5 ${
+        step === "moderator" ? "justify-center" : ""
+      }`}
+    >
       {step !== "night" && (
         <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
           {STEP_TITLES[step]}
