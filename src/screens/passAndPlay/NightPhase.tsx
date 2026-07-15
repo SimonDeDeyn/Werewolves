@@ -25,6 +25,8 @@ const IMPLEMENTED_WAKE = new Set<string>([
   "fox",
   "defender",
   "raven",
+  "two-sisters",
+  "three-brothers",
   "wild-child",
   "pyromaniac",
   "piper",
@@ -1163,16 +1165,24 @@ export default function NightPhase({
                   const allDead = !players.some(
                     (p) => roleOf(p) === c.id && !dead.includes(p),
                   );
+                  // A living Fox who has sniffed out no wolves keeps his card but
+                  // no longer wakes — flag the spent power so the moderator knows.
+                  const foxSpent =
+                    c.id === "fox" &&
+                    !allDead &&
+                    players
+                      .filter((p) => roleOf(p) === "fox" && !dead.includes(p))
+                      .every((p) => foxDone.includes(p));
                   return (
                     <li
                       key={c.id}
                       className={`relative flex items-center gap-3 rounded-lg border border-pine-600 bg-night-800/40 px-3 py-2 ${
-                        allDead ? "opacity-60" : ""
+                        allDead || foxSpent ? "opacity-60" : ""
                       }`}
                     >
                       <CharacterPortrait
                         character={c}
-                        className={`h-9 w-9 shrink-0 ${allDead ? "grayscale" : ""}`}
+                        className={`h-9 w-9 shrink-0 ${allDead || foxSpent ? "grayscale" : ""}`}
                       />
                       <div className="min-w-0 flex-1">
                         <p
@@ -1182,10 +1192,16 @@ export default function NightPhase({
                         >
                           {c.name}
                         </p>
-                        {c.firstNightOnly && (
-                          <p className="text-[0.6rem] tracking-widest text-moss-300 uppercase">
-                            First night only
+                        {foxSpent ? (
+                          <p className="text-[0.6rem] tracking-widest text-bark-300 uppercase">
+                            Power spent
                           </p>
+                        ) : (
+                          c.firstNightOnly && (
+                            <p className="text-[0.6rem] tracking-widest text-moss-300 uppercase">
+                              First night only
+                            </p>
+                          )
                         )}
                       </div>
                       <span className="font-display text-xs text-moss-400">#{c.nightOrder}</span>
@@ -1727,6 +1743,28 @@ export default function NightPhase({
               {wakePick ? `Curse ${wakePick} →` : "Choose a player"}
             </button>
           </div>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
+    // Two Sisters / Three Brothers — a silent first-night greeting so the
+    // siblings can recognise one another. No choice to make; just wake and move on.
+    if (roleId === "two-sisters" || roleId === "three-brothers") {
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            {role?.name ?? "The siblings"} wake
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            <span className="text-moon-100">{holderLabel}</span> can wake up to greet each other,
+            then return to sleep.
+          </p>
+          {referenceButtons}
+          <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+            Continue →
+          </button>
           {undoRow}
           {referenceOverlay}
         </div>
