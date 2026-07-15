@@ -1554,9 +1554,29 @@ export default function NightPhase({
     }
 
     // Gypsy — a spiritualist: she names a player and asks a single yes/no
-    // question about them, which the moderator answers with a nod or a shake.
-    // No card is shown; the target select is only a focus aid.
+    // question about them. Their card is shown to the moderator (not the Gypsy)
+    // so the answer can be given truthfully with a nod or a shake.
     if (roleId === "gypsy") {
+      if (wakeShown && wakePick) {
+        const seen = byId(observedRole(wakePick));
+        return (
+          <div className="flex flex-col items-center gap-4 py-2 text-center">
+            <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+              {wakePick} is…
+            </h1>
+            <p className="max-w-sm text-sm text-moss-200">
+              For your eyes only — glance at this, then answer the Gypsy's yes/no question with a
+              nod or a shake. Don't show her the card.
+            </p>
+            {seen && <GameCard character={seen} initialFlipped />}
+            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+              Done →
+            </button>
+            {undoRow}
+            {referenceOverlay}
+          </div>
+        );
+      }
       const targets = players.filter((p) => !dead.includes(p) && !holders.includes(p));
       return (
         <div className="flex flex-col items-center gap-4 py-2 text-center">
@@ -1565,8 +1585,8 @@ export default function NightPhase({
           </h1>
           <p className="max-w-sm text-sm text-moss-200">
             Wake <span className="text-moon-100">{holderLabel}</span>. She points to one player and
-            asks a single yes/no question about them — answer with a nod or a shake, then send her
-            back to sleep.
+            asks a single yes/no question about them — reveal their card to yourself so you can
+            answer truthfully.
           </p>
           {referenceButtons}
           <div className="flex flex-wrap justify-center gap-2">
@@ -1576,9 +1596,18 @@ export default function NightPhase({
               </button>
             ))}
           </div>
-          <button className="btn-lantern w-full max-w-sm px-4 py-3 text-lg" onClick={advanceWake}>
-            {wakePick ? `Answered about ${wakePick} →` : "She asked her question →"}
-          </button>
+          <div className="flex w-full max-w-sm gap-3">
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={advanceWake}>
+              Skip
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              disabled={!wakePick}
+              onClick={() => setWakeShown(true)}
+            >
+              {wakePick ? `Reveal ${wakePick}'s card →` : "Choose a player"}
+            </button>
+          </div>
           {undoRow}
           {referenceOverlay}
         </div>
