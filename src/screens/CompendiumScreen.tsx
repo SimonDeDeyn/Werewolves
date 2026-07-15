@@ -63,16 +63,21 @@ function CharacterCard({
 export default function CompendiumScreen({ onBack }: { onBack: () => void }) {
   const [selected, setSelected] = useState<Character | null>(null);
   return (
-    <main className="mx-auto min-h-dvh max-w-5xl px-4 pt-0 pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(4rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-6">
-      <header className="sticky top-0 z-20 mb-8 flex items-center gap-4 bg-gradient-to-b from-night-950 via-night-950/85 to-transparent pt-[calc(1.5rem+env(safe-area-inset-top))] pb-6">
-        <button className="btn-lantern px-4 py-2 text-sm" onClick={onBack}>
-          ← Back
-        </button>
-        <h1 className="font-display text-3xl font-bold tracking-wider text-moon-100">
-          Characters
-        </h1>
+    <main className="mx-auto min-h-dvh max-w-5xl pb-[calc(4rem+env(safe-area-inset-bottom))]">
+      {/* Full-bleed sticky header: the gradient spans the whole screen width,
+          while an inner wrapper keeps the button + title aligned to the content. */}
+      <header className="sticky top-0 z-20 mb-8 bg-gradient-to-b from-night-950 via-night-950/85 to-transparent pt-[calc(1.5rem+env(safe-area-inset-top))] pb-6">
+        <div className="flex items-center gap-4 px-4 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-6">
+          <button className="btn-lantern px-4 py-2 text-sm" onClick={onBack}>
+            ← Back
+          </button>
+          <h1 className="font-display text-3xl font-bold tracking-wider text-moon-100">
+            Characters
+          </h1>
+        </div>
       </header>
 
+      <div className="px-4 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-6">
       {TEAM_ORDER.map((team) => (
         <section key={team} className="mb-10">
           <h2
@@ -88,6 +93,7 @@ export default function CompendiumScreen({ onBack }: { onBack: () => void }) {
           </div>
         </section>
       ))}
+      </div>
 
       {selected && (
         <div

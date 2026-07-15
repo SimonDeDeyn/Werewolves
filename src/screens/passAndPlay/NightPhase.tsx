@@ -28,6 +28,37 @@ const IMPLEMENTED_WAKE = new Set<string>([
 ]);
 
 /**
+ * Atmospheric flavor lines for the day/night transition beat. One is chosen per
+ * transition by a stable index off the round number, so the same beat never
+ * re-rolls its text on a re-render but each dawn/dusk reads a little different.
+ */
+const WAKE_TEXTS = [
+  "Dawn spills over the rooftops. Everyone opens their eyes — time to talk, to accuse, and to vote.",
+  "Cockcrow cuts the mist. The village stirs, counts its own, and begins to whisper.",
+  "Grey light seeps between the shutters. Neighbours rise, wary of the faces around them.",
+  "Morning finds the square empty of wolves — but not of suspicion. Let the talking begin.",
+  "The lanterns are cold and the night is spent. Villagers gather, eyes searching for a lie.",
+  "First light breaks the spell of the dark wood. Doors open; accusations sharpen.",
+  "The bell tolls the hour. Sleep falls away and the village turns to judge its own.",
+  "Frost lifts off the thatch as the sun climbs. Time to name a name before dusk returns.",
+  "The forest quiets and the village wakes uneasy, each soul weighing the one beside them.",
+  "Daybreak. The survivors blink into the light and reckon with what the night has taken.",
+];
+
+const SLEEP_TEXTS = [
+  "Doors are barred and lanterns snuffed. The village lies down as the dark wood stirs awake.",
+  "The last candle gutters out. Close your eyes — the creatures of the night are waking.",
+  "Shutters latch and the square falls silent. Sleep now, while the forest begins to prowl.",
+  "A cold wind walks the empty lanes. The village dreams; something else does not.",
+  "Night settles over the rooftops like a held breath. Lay your head down and trust no one.",
+  "The moon climbs above the pines. One by one the windows go dark — and the hunt begins.",
+  "Fires are banked and the last voices hush. The wood leans close as the village sleeps.",
+  "Darkness pools between the houses. Close your eyes; the ones who wake mean you harm.",
+  "The bell rings the village to bed. Beyond the fence, yellow eyes open in the dark.",
+  "Silence falls thick as fog. The village surrenders to sleep — and the night takes over.",
+];
+
+/**
  * In-progress elimination resolution. The Servant and Devoted Servant may only
  * intervene on village (day) eliminations, via a shared "who intervenes?" hub;
  * the Hunter fires on any death.
@@ -2166,6 +2197,9 @@ export default function NightPhase({
   // A brief atmospheric beat between the aftermath board and the next phase.
   if (view === "transition") {
     const wakingUp = phase === "night"; // the night just ended — dawn breaks
+    const flavor = wakingUp
+      ? WAKE_TEXTS[round % WAKE_TEXTS.length]
+      : SLEEP_TEXTS[(round + 1) % SLEEP_TEXTS.length];
     return (
       <div className="flex flex-col items-center justify-center gap-6 py-12 text-center">
         <p className="font-display text-xs tracking-[0.4em] text-moss-300 uppercase">
@@ -2174,11 +2208,7 @@ export default function NightPhase({
         <h1 className="font-display text-3xl font-bold tracking-wider text-moon-100">
           {wakingUp ? "The village wakes up" : "The village goes to sleep"}
         </h1>
-        <p className="max-w-sm text-sm text-moss-200">
-          {wakingUp
-            ? "Dawn spills over the rooftops. Everyone opens their eyes — time to talk, to accuse, and to vote."
-            : "Doors are barred and lanterns snuffed. The village lies down as the dark wood stirs awake."}
-        </p>
+        <p className="max-w-sm text-sm text-moss-200">{flavor}</p>
         <button className="btn-lantern px-6 py-3.5 text-lg" onClick={leaveTransition}>
           {wakingUp ? "Continue to day →" : "Continue to the night →"}
         </button>
