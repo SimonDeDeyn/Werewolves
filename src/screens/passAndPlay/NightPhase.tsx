@@ -21,7 +21,10 @@ const IMPLEMENTED_WAKE = new Set<string>([
   "actor",
   "cupid",
   "seer",
+  "gypsy",
+  "fox",
   "defender",
+  "raven",
   "wild-child",
   "pyromaniac",
   "piper",
@@ -196,6 +199,8 @@ interface Snapshot {
   idiotSpared: string[];
   elderSurvived: string[];
   judgeUsed: boolean;
+  foxDone: string[];
+  ravenCursed: string | null;
 }
 
 /**
@@ -260,6 +265,11 @@ export default function NightPhase({
   // Players the Seer glimpsed this night, so the scroll can recount it. Cleared
   // when the night ends.
   const [seerViews, setSeerViews] = useState<string[]>([]);
+  // Fox holders who have spent their power (a sniff that turned up no wolves).
+  const [foxDone, setFoxDone] = useState<string[]>([]);
+  // The Raven's cursed player: carries two extra guilty votes into the coming
+  // day, badged "+2" on the vote circle, then clears when the next night falls.
+  const [ravenCursed, setRavenCursed] = useState<string | null>(null);
   // Actor: which of the three fixed card positions are spent, and tonight's pick.
   // Positions stay put across nights (0/1 top row, 2 bottom-centre) so spent
   // cards leave a gap and the survivors keep their placement.
@@ -361,6 +371,8 @@ export default function NightPhase({
     idiotSpared,
     elderSurvived,
     judgeUsed,
+    foxDone,
+    ravenCursed,
   });
   const pushHistory = () => setHistory((h) => [...h, snapshot()]);
   const undo = () => {
@@ -409,6 +421,8 @@ export default function NightPhase({
     setIdiotSpared(prev.idiotSpared);
     setElderSurvived(prev.elderSurvived);
     setJudgeUsed(prev.judgeUsed);
+    setFoxDone(prev.foxDone);
+    setRavenCursed(prev.ravenCursed);
     setHistory((h) => h.slice(0, -1));
   };
   const canUndo = history.length > 0;
@@ -418,6 +432,12 @@ export default function NightPhase({
   // A Wild Child who turned counts as a werewolf even though their card is unchanged.
   const teamOf = (p: string) =>
     turnedWolves.includes(p) ? "werewolf" : byId(roleOf(p))?.team;
+
+  // How a player reads to inspection powers. The Traitor sides with the wolves
+  // but has no fangs — to the Seer and every other observer they are an ordinary
+  // Villager, so role-inspection shows a Villager card and the Fox smells nothing.
+  const observedRole = (p: string) => (roleOf(p) === "traitor" ? "villager" : roleOf(p));
+  const readsAsWolf = (p: string) => teamOf(p) === "werewolf" && roleOf(p) !== "traitor";
 
   // Who (if anyone) has won given a hypothetical set of dead players. Pulled out
   // so a Hunter's morning shot can be checked for a game-ending result on the spot.
@@ -899,6 +919,13 @@ export default function NightPhase({
         (!c.firstNightOnly || rnd === 1) &&
         // The Actor borrows a role only for its first three nights.
         !(c.id === "actor" && actorUsedIdx.length >= 3) &&
+        // A Fox whose sniff came up empty has lost the power for good.
+        !(
+          c.id === "fox" &&
+          players
+            .filter((p) => !dead.includes(p) && roleOf(p) === "fox")
+            .every((p) => foxDone.includes(p))
+        ) &&
         players.some((p) => !dead.includes(p) && roleOf(p) === c.id),
     ).map((c) => c.id);
 
@@ -938,6 +965,8 @@ export default function NightPhase({
       const nextRound = round + 1;
       setPhase("night");
       setRound(nextRound);
+      // Last night's Raven curse lapses as the new night begins.
+      setRavenCursed(null);
       const q = wakeRolesFor(nextRound);
       setWakeQueue(q);
       setView(q.length ? "wake" : "select");
@@ -1015,6 +1044,24 @@ export default function NightPhase({
   /** Sleepwalker locks in tonight's visit, then moves on. */
   const confirmVisit = () => {
     if (wakePick) setSleepwalkerVisit(wakePick);
+    advanceWake();
+  };
+
+  /**
+   * Fox's sniff is resolved. A miss (no wolves among the three) spends the
+   * power for every living Fox, so they wake no more. A hit keeps it.
+   */
+  const confirmFox = (anyWolf: boolean) => {
+    if (!anyWolf) {
+      const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === "fox");
+      setFoxDone((d) => [...d, ...holders.filter((p) => !d.includes(p))]);
+    }
+    advanceWake();
+  };
+
+  /** Raven curses tonight's target — two extra votes fall on them come day. */
+  const confirmRaven = () => {
+    setRavenCursed(wakePick);
     advanceWake();
   };
 
@@ -1506,6 +1553,157 @@ export default function NightPhase({
       );
     }
 
+    // Gypsy — a spiritualist: she names a player and asks a single yes/no
+    // question about them, which the moderator answers with a nod or a shake.
+    // No card is shown; the target select is only a focus aid.
+    if (roleId === "gypsy") {
+      const targets = players.filter((p) => !dead.includes(p) && !holders.includes(p));
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Gypsy wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. She points to one player and
+            asks a single yes/no question about them — answer with a nod or a shake, then send her
+            back to sleep.
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {targets.map((t) => (
+              <button key={t} type="button" onClick={() => setWakePick(t)} className={pickBtn(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <button className="btn-lantern w-full max-w-sm px-4 py-3 text-lg" onClick={advanceWake}>
+            {wakePick ? `Answered about ${wakePick} →` : "She asked her question →"}
+          </button>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
+    // Fox — points at up to three players; the app reveals whether at least one
+    // is a werewolf. A miss (no wolves) spends the power for the rest of the game.
+    if (roleId === "fox") {
+      if (wakeShown) {
+        const anyWolf = wakePicks.some(readsAsWolf);
+        return (
+          <div className="flex flex-col items-center gap-4 py-2 text-center">
+            <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+              {anyWolf ? "The scent of wolf" : "No wolves here"}
+            </h1>
+            <div className="text-5xl">{anyWolf ? "🐺" : "🚫"}</div>
+            <p className="max-w-sm text-sm text-moss-200">
+              {anyWolf
+                ? "At least one of the three is a werewolf. Give the Fox a nod — the nose stays keen for another night."
+                : "Not a wolf among them. The Fox's nose fails — shake your head; the power is spent for the rest of the game."}
+            </p>
+            <button
+              className="btn-lantern px-6 py-3.5 text-lg"
+              onClick={() => confirmFox(anyWolf)}
+            >
+              Done →
+            </button>
+            {undoRow}
+            {referenceOverlay}
+          </div>
+        );
+      }
+      const targets = players.filter((p) => !dead.includes(p));
+      const toggleFox = (name: string) =>
+        setWakePicks((ps) =>
+          ps.includes(name)
+            ? ps.filter((x) => x !== name)
+            : ps.length < 3
+              ? [...ps, name]
+              : ps,
+        );
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Fox wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. They point at a group of up
+            to three neighbours — you'll learn whether at least one is a werewolf.
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {targets.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleFox(t)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  wakePicks.includes(t)
+                    ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                    : "border-pine-600 text-moss-200 hover:border-moss-400"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="flex w-full max-w-sm gap-3">
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={advanceWake}>
+              Skip
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              disabled={!wakePicks.length}
+              onClick={() => setWakeShown(true)}
+            >
+              {wakePicks.length ? `Sniff ${wakePicks.length} →` : "Choose up to three"}
+            </button>
+          </div>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
+    // Raven — curses one player, who carries two extra guilty votes into the
+    // coming day (badged "+2" on the vote circle).
+    if (roleId === "raven") {
+      const targets = players.filter((p) => !dead.includes(p) && !holders.includes(p));
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The Raven wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. On whose rooftop does the
+            black bird settle? They face two extra votes at the coming day's trial.
+          </p>
+          {referenceButtons}
+          <div className="flex flex-wrap justify-center gap-2">
+            {targets.map((t) => (
+              <button key={t} type="button" onClick={() => setWakePick(t)} className={pickBtn(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="flex w-full max-w-sm gap-3">
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={advanceWake}>
+              Skip
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              disabled={!wakePick}
+              onClick={confirmRaven}
+            >
+              {wakePick ? `Curse ${wakePick} →` : "Choose a player"}
+            </button>
+          </div>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
     // Actor — turns over one of three fixed cards (the first they flip is
     // tonight's role). Spent positions stay empty so the rest keep their place.
     if (roleId === "actor") {
@@ -1776,7 +1974,7 @@ export default function NightPhase({
     // Seer — the moderator picks a player, then the app shows that player's card.
     if (roleId === "seer") {
       if (wakeShown && wakePick) {
-        const seen = byId(roleOf(wakePick));
+        const seen = byId(observedRole(wakePick));
         return (
           <div className="flex flex-col items-center gap-4 py-2 text-center">
             <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
@@ -2161,6 +2359,7 @@ export default function NightPhase({
           soaked={soaked}
           charmed={charmed}
           defended={protectedPlayer ? [protectedPlayer] : []}
+          cursed={phase === "day" && ravenCursed ? [ravenCursed] : []}
           onToggle={toggle}
           centerLabel={label}
         />

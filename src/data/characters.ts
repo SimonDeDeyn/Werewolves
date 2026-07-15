@@ -124,10 +124,9 @@ export const CHARACTERS: Character[] = [
     name: "Fox",
     team: "village",
     nightOrder: 50,
-    oncePerGame: true,
-    description: "A sharp nose that can smell wolf on the wind — once.",
+    description: "A sharp nose that can smell wolf on the wind.",
     ability:
-      "Once per game, points at three adjacent players and learns if at least one is a werewolf; loses the power if the answer is no.",
+      "Each night, points at a group of three players and learns whether at least one is a werewolf; if none are, loses the power for the rest of the game.",
   },
   {
     id: "sheriff",

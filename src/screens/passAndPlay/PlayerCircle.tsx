@@ -10,6 +10,7 @@ export default function PlayerCircle({
   soaked = [],
   charmed = [],
   defended = [],
+  cursed = [],
   onToggle,
   centerLabel,
 }: {
@@ -22,6 +23,8 @@ export default function PlayerCircle({
   charmed?: string[];
   /** The Defender's protected player — badged with a shield. */
   defended?: string[];
+  /** The Raven's cursed player — badged with "+2" extra votes for the day. */
+  cursed?: string[];
   onToggle?: (name: string) => void;
   centerLabel?: string;
 }) {
@@ -48,6 +51,7 @@ export default function PlayerCircle({
         const isSoaked = soaked.includes(name) && !isDead;
         const isCharmed = charmed.includes(name) && !isDead;
         const isDefended = defended.includes(name) && !isDead;
+        const isCursed = cursed.includes(name) && !isDead;
         const interactive = !!onToggle && !isDead;
 
         return (
@@ -93,6 +97,11 @@ export default function PlayerCircle({
               {isCharmed && (
                 <span className="pointer-events-none absolute -right-1.5 -bottom-1.5 grid h-4 w-4 place-items-center rounded-full bg-night-950 text-[0.6rem] leading-none ring-1 ring-pine-500">
                   🎵
+                </span>
+              )}
+              {isCursed && (
+                <span className="pointer-events-none absolute -bottom-1.5 -left-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-blood-700 px-0.5 text-[0.55rem] leading-none font-semibold text-moon-100 ring-1 ring-blood-500">
+                  +2
                 </span>
               )}
             </span>
