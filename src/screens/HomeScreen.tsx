@@ -1,8 +1,10 @@
 interface Props {
   onNavigate: (screen: "compendium" | "newgame") => void;
+  /** Provided only when a saved game is waiting to be resumed. */
+  onResume?: () => void;
 }
 
-export default function HomeScreen({ onNavigate }: Props) {
+export default function HomeScreen({ onNavigate, onResume }: Props) {
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] pr-[max(1.5rem,env(safe-area-inset-right))] pl-[max(1.5rem,env(safe-area-inset-left))] text-center">
       <p className="font-display text-sm tracking-[0.4em] text-moss-300 uppercase">
@@ -17,6 +19,14 @@ export default function HomeScreen({ onNavigate }: Props) {
       </p>
 
       <div className="mt-10 flex w-full max-w-xs flex-col gap-3">
+        {onResume && (
+          <button
+            className="btn-lantern border-moss-400/70 px-6 py-3.5 text-lg"
+            onClick={onResume}
+          >
+            Resume game
+          </button>
+        )}
         <button
           className="btn-lantern px-6 py-3.5 text-lg"
           onClick={() => onNavigate("newgame")}

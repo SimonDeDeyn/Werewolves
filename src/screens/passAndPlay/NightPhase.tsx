@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { byId, NIGHT_SEQUENCE, type Character } from "../../data/characters";
 import type { Assignment } from "../../game/setup";
+import { clearGame, saveGame } from "../../game/persistence";
 import CharacterPortrait from "../../components/CharacterPortrait";
 import PlayerCircle from "./PlayerCircle";
 import NoticeBoard, { type BoardItem } from "./NoticeBoard";
@@ -192,7 +193,7 @@ function NightScroll({
 }
 
 /** A full capture of the mutable game state, so any screen can be restored. */
-interface Snapshot {
+export interface Snapshot {
   dead: string[];
   round: number;
   phase: Phase;
@@ -256,6 +257,7 @@ export default function NightPhase({
   board,
   middleCards = [],
   actorCards = [],
+  resume,
   onExit,
   onPlayAgain,
 }: {
@@ -263,6 +265,8 @@ export default function NightPhase({
   board: Assignment[];
   middleCards?: string[];
   actorCards?: string[];
+  /** A saved Snapshot to restore into on mount (resuming an interrupted game). */
+  resume?: Snapshot;
   onExit: () => void;
   onPlayAgain: () => void;
 }) {
@@ -387,6 +391,10 @@ export default function NightPhase({
 
   // Screen history — one snapshot per transition, so Undo restores the last screen.
   const [history, setHistory] = useState<Snapshot[]>([]);
+  // When resuming a saved game we hydrate on mount before writing any save back,
+  // so the fresh-mount default state never clobbers the stored game. A brand-new
+  // game is "hydrated" from the start.
+  const [hydrated, setHydrated] = useState(!resume);
 
   const snapshot = (): Snapshot => ({
     dead,
@@ -441,9 +449,9 @@ export default function NightPhase({
     wolfKillCount,
   });
   const pushHistory = () => setHistory((h) => [...h, snapshot()]);
-  const undo = () => {
-    if (!history.length) return;
-    const prev = history[history.length - 1];
+  // Push every field of a Snapshot back into live state — shared by Undo (steps
+  // back one screen) and resume-on-mount (restores a saved game).
+  const restore = (prev: Snapshot) => {
     setDead(prev.dead);
     setRound(prev.round);
     setPhase(prev.phase);
@@ -494,6 +502,10 @@ export default function NightPhase({
     setAngelWon(prev.angelWon);
     setWolfSorcery(prev.wolfSorcery);
     setWolfKillCount(prev.wolfKillCount);
+  };
+  const undo = () => {
+    if (!history.length) return;
+    restore(history[history.length - 1]);
     setHistory((h) => h.slice(0, -1));
   };
   const canUndo = history.length > 0;
@@ -564,6 +576,27 @@ export default function NightPhase({
     return null;
   };
   const result = winnerFor(dead);
+
+  // Restore a saved game once, before first paint, so there's no flash of the
+  // fresh-deal default state. useLayoutEffect + the mount-only deps run it once.
+  useLayoutEffect(() => {
+    if (resume) {
+      restore(resume);
+      setHydrated(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-save the game to localStorage on every change, so a killed app or a
+  // locked phone can resume mid-night. A finished game (someone has won) clears
+  // the slot instead — there's nothing left to resume.
+  const persisted = JSON.stringify({ assignments, board, middleCards, actorCards, state: snapshot() });
+  useEffect(() => {
+    if (!hydrated) return;
+    if (result) clearGame();
+    else saveGame(JSON.parse(persisted));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persisted, hydrated, result]);
 
   const boardItems: BoardItem[] = board.map((a) => {
     // A Devoted Servant / Doppelgänger keeps their ORIGINAL card on the board,

@@ -7,6 +7,7 @@ import {
   type Assignment,
   type SetupDraft,
 } from "../../game/setup";
+import { clearGame, type SavedGame } from "../../game/persistence";
 import RoleSelectStep from "./RoleSelectStep";
 import NoticeBoardStep from "./NoticeBoardStep";
 import RevealStep from "./RevealStep";
@@ -176,18 +177,36 @@ const STEP_TITLES: Record<Step, string> = {
   night: "The night",
 };
 
-export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
-  const [step, setStep] = useState<Step>("names");
+export default function PassAndPlayFlow({
+  onExit,
+  resume,
+}: {
+  onExit: () => void;
+  /** A saved game to jump straight back into, skipping setup. */
+  resume?: SavedGame;
+}) {
+  const [step, setStep] = useState<Step>(resume ? "night" : "names");
   const [draft, setDraft] = useState<SetupDraft>(emptyDraft());
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>(resume?.assignments ?? []);
   // Fixed shuffled order for the notice board, so pins can't be mapped to seats
   // and stay put across rounds as roles get crossed off.
-  const [board, setBoard] = useState<Assignment[]>([]);
+  const [board, setBoard] = useState<Assignment[]>(resume?.board ?? []);
+  // Setup extras handed to NightPhase — from the draft on a fresh deal, or from
+  // the saved game when resuming.
+  const [middleCards, setMiddleCards] = useState<string[]>(resume?.middleCards ?? []);
+  const [actorCards, setActorCards] = useState<string[]>(resume?.actorCards ?? []);
+  // The saved night state to hydrate on resume; consumed once, then dropped so a
+  // later "play again" starts clean.
+  const [resumeState, setResumeState] = useState(resume?.state);
 
   const deal = () => {
     const next = distribute(draft);
     setAssignments(next);
     setBoard(shuffle(next));
+    setMiddleCards(draft.middleCards);
+    setActorCards(draft.actorCards);
+    setResumeState(undefined);
+    clearGame(); // a brand-new game supersedes any old save
     setStep("board");
   };
 
@@ -265,8 +284,9 @@ export default function PassAndPlayFlow({ onExit }: { onExit: () => void }) {
         <NightPhase
           assignments={assignments}
           board={board}
-          middleCards={draft.middleCards}
-          actorCards={draft.actorCards}
+          middleCards={middleCards}
+          actorCards={actorCards}
+          resume={resumeState}
           onExit={onExit}
           onPlayAgain={() => setStep("moderator")}
         />

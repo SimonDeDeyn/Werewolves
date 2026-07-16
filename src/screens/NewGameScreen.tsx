@@ -1,5 +1,6 @@
 import { useState } from "react";
 import PassAndPlayFlow from "./passAndPlay/PassAndPlayFlow";
+import type { SavedGame } from "../game/persistence";
 
 type Mode = "menu" | "pass" | "host" | "join";
 
@@ -32,8 +33,17 @@ function ModeCard({
   );
 }
 
-export default function NewGameScreen({ onBack }: { onBack: () => void }) {
-  const [mode, setMode] = useState<Mode>("menu");
+export default function NewGameScreen({
+  onBack,
+  resume,
+}: {
+  onBack: () => void;
+  /** When set, skip the menu and drop straight into the resumed game. */
+  resume?: SavedGame;
+}) {
+  const [mode, setMode] = useState<Mode>(resume ? "pass" : "menu");
+  // The saved game to resume, consumed once — starting a fresh Pass & play clears it.
+  const [activeResume, setActiveResume] = useState(resume);
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[calc(1.5rem+env(safe-area-inset-top))] pr-[max(1.25rem,env(safe-area-inset-right))] pb-[calc(2rem+env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))]">
@@ -46,7 +56,10 @@ export default function NewGameScreen({ onBack }: { onBack: () => void }) {
           <ModeCard
             title="Pass & play"
             desc="One device goes around the table. No accounts, works offline."
-            onClick={() => setMode("pass")}
+            onClick={() => {
+              setActiveResume(undefined); // a fresh start, not the saved game
+              setMode("pass");
+            }}
           />
           <ModeCard
             title="Host a room"
@@ -63,7 +76,13 @@ export default function NewGameScreen({ onBack }: { onBack: () => void }) {
 
       {mode === "pass" && (
         <div className="flex flex-1 flex-col py-2">
-          <PassAndPlayFlow onExit={() => setMode("menu")} />
+          <PassAndPlayFlow
+            resume={activeResume}
+            onExit={() => {
+              setActiveResume(undefined);
+              setMode("menu");
+            }}
+          />
         </div>
       )}
     </main>
