@@ -119,12 +119,18 @@ function NightScroll({
   onToggle,
   lines,
   isNight,
+  announced,
+  onToggleLine,
 }: {
   open: boolean;
   onToggle: () => void;
   lines: string[];
   isNight: boolean;
+  /** Indices of lines the moderator has marked as told to the whole table. */
+  announced: number[];
+  onToggleLine: (i: number) => void;
 }) {
+  const shared = lines.length ? announced.filter((i) => i < lines.length).length : 0;
   return (
     <div className="mx-auto mt-3 w-full max-w-sm">
       <button
@@ -138,18 +144,46 @@ function NightScroll({
       </button>
       {open && (
         <div className="mt-2 rounded-lg border border-bark-400 bg-gradient-to-b from-bark-600/50 to-night-900/70 p-4 text-left">
-          <p className="mb-2 font-display text-xs tracking-[0.3em] text-bark-300 uppercase">
-            {isNight ? "The night's account" : "The day's account"}
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <p className="font-display text-xs tracking-[0.3em] text-bark-300 uppercase">
+              {isNight ? "The night's account" : "The day's account"}
+            </p>
+            <span className="text-[0.65rem] tracking-wide text-moss-400">
+              {shared}/{lines.length} told
+            </span>
+          </div>
+          <p className="mb-2 text-[0.7rem] text-moss-400 italic">
+            Tap a line once you've announced it to the table.
           </p>
-          <ul className="space-y-1.5">
-            {lines.map((line, i) => (
-              <li key={i} className="flex gap-2 text-sm leading-snug text-moon-200">
-                <span aria-hidden className="mt-0.5 shrink-0 text-moss-400">
-                  ›
-                </span>
-                <span>{line}</span>
-              </li>
-            ))}
+          <ul className="space-y-1">
+            {lines.map((line, i) => {
+              const on = announced.includes(i);
+              return (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => onToggleLine(i)}
+                    className={`flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-sm leading-snug transition-colors ${
+                      on
+                        ? "border-moss-400/60 bg-moss-400/10 text-moon-100"
+                        : "border-transparent text-moss-300 hover:border-bark-400/60"
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`mt-px grid h-4 w-4 shrink-0 place-items-center rounded-full border text-[0.6rem] ${
+                        on
+                          ? "border-moss-400 bg-moss-400/20 text-moss-200"
+                          : "border-pine-600 text-transparent"
+                      }`}
+                    >
+                      ✓
+                    </span>
+                    <span>{line}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -207,6 +241,8 @@ interface Snapshot {
   packEnraged: boolean;
   whiteWolfKill: string | null;
   angelWon: boolean;
+  wolfSorcery: boolean;
+  wolfKillCount: number;
 }
 
 /**
@@ -287,6 +323,11 @@ export default function NightPhase({
   const [whiteWolfKill, setWhiteWolfKill] = useState<string | null>(null);
   // The Angel achieved their wish — eliminated on the very first day or night.
   const [angelWon, setAngelWon] = useState(false);
+  // What the wolves did this night, so the Rooster can crow a fitting (but still
+  // unspecific) omen at dawn: whether a hidden dark power fired (White Werewolf's
+  // strike or the Wolf-Father's bite), and how many the pack marked for death.
+  const [wolfSorcery, setWolfSorcery] = useState(false);
+  const [wolfKillCount, setWolfKillCount] = useState(0);
   // Actor: which of the three fixed card positions are spent, and tonight's pick.
   // Positions stay put across nights (0/1 top row, 2 bottom-centre) so spent
   // cards leave a gap and the survivors keep their placement.
@@ -328,8 +369,11 @@ export default function NightPhase({
 
   // Read-only moderator reference overlay: night wake order or the full roster.
   const [reference, setReference] = useState<"wake" | "roster" | null>(null);
-  // Whether the aftermath "scroll" (full account of the night) is unfurled.
+  // Whether the aftermath "scroll" (full account of the night) is unfurled, and
+  // which of its lines the moderator has marked as announced to the table. Both
+  // are ephemeral view state (reset each board), so they stay out of the Snapshot.
   const [scrollOpen, setScrollOpen] = useState(false);
+  const [announced, setAnnounced] = useState<number[]>([]);
 
   const [res, setRes] = useState<Resolution | null>(null);
   const [resPick, setResPick] = useState<string | null>(null);
@@ -393,6 +437,8 @@ export default function NightPhase({
     packEnraged,
     whiteWolfKill,
     angelWon,
+    wolfSorcery,
+    wolfKillCount,
   });
   const pushHistory = () => setHistory((h) => [...h, snapshot()]);
   const undo = () => {
@@ -446,6 +492,8 @@ export default function NightPhase({
     setPackEnraged(prev.packEnraged);
     setWhiteWolfKill(prev.whiteWolfKill);
     setAngelWon(prev.angelWon);
+    setWolfSorcery(prev.wolfSorcery);
+    setWolfKillCount(prev.wolfKillCount);
     setHistory((h) => h.slice(0, -1));
   };
   const canUndo = history.length > 0;
@@ -790,6 +838,11 @@ export default function NightPhase({
 
       // The Werewolf Cub's avenging double-kill (if any) is spent this night.
       if (packEnraged) setPackEnraged(false);
+
+      // How many the pack marked tonight: 0 = they held off, 1 = a plain attack,
+      // more = the Big Bad Wolf's bonus or the Cub's rampage. The Rooster crows
+      // a different omen for each at dawn.
+      setWolfKillCount(raw.length);
     } else if (!powersDisabled) {
       // Day vote — the Prince and Village Idiot may dodge the noose once.
       const prince = deaths.find((p) => roleOf(p) === "prince" && !princeUsed.includes(p));
@@ -974,6 +1027,7 @@ export default function NightPhase({
     if (victim) {
       setTurnedWolves((w) => [...w, victim]);
       setWolfFatherUsed(true);
+      setWolfSorcery(true);
       step({
         ...res,
         deaths: res.deaths.filter((p) => p !== victim),
@@ -1059,6 +1113,9 @@ export default function NightPhase({
       setRound(nextRound);
       // Last night's Raven curse lapses as the new night begins.
       setRavenCursed(null);
+      // A fresh night: reset the Rooster's tally of what the wolves get up to.
+      setWolfSorcery(false);
+      setWolfKillCount(0);
       const q = wakeRolesFor(nextRound);
       setWakeQueue(q);
       setView(q.length ? "wake" : "select");
@@ -1160,6 +1217,7 @@ export default function NightPhase({
   /** White Werewolf marks a fellow wolf to devour tonight, then moves on. */
   const confirmWhiteWolf = () => {
     setWhiteWolfKill(wakePick);
+    if (wakePick) setWolfSorcery(true);
     advanceWake();
   };
 
@@ -2672,6 +2730,7 @@ export default function NightPhase({
   const advance = () => {
     pushHistory();
     setScrollOpen(false);
+    setAnnounced([]);
     setView("transition");
   };
 
@@ -2682,6 +2741,17 @@ export default function NightPhase({
 
   // At dawn the Bear Tamer's bear growls if a wolf now sits beside its keeper.
   const growl = isNight && bearGrowls();
+
+  // At dawn a living Rooster crows a fitting omen for what the wolves did — a
+  // hidden dark power, an unusually deep hunt, a plain kill, or nothing at all.
+  const crows = isNight && players.some((p) => roleOf(p) === "rooster" && !dead.includes(p));
+  const roosterCrow = wolfSorcery
+    ? "🐓 The rooster crows — a wolf's dark power stirred in the night."
+    : wolfKillCount > 1
+      ? "🐓 The rooster crows — the pack hunted more than once tonight."
+      : wolfKillCount >= 1
+        ? "🐓 The rooster crows — the werewolves hunted in the night."
+        : "🐓 The rooster crows — the wolves did not strike last night.";
 
   return (
     <div className="flex flex-col gap-4">
@@ -2703,6 +2773,10 @@ export default function NightPhase({
           onToggle={() => setScrollOpen((o) => !o)}
           lines={scrollLines}
           isNight={isNight}
+          announced={announced}
+          onToggleLine={(i) =>
+            setAnnounced((a) => (a.includes(i) ? a.filter((x) => x !== i) : [...a, i]))
+          }
         />
         <div className="mt-3">{referenceButtons}</div>
       </div>
@@ -2712,6 +2786,12 @@ export default function NightPhase({
           <p className="font-display text-sm tracking-wide text-bark-200">
             🐻 The bear growls — a werewolf sits beside the Bear Tamer.
           </p>
+        </div>
+      )}
+
+      {crows && (
+        <div className="rounded-lg border border-moon-400/40 bg-night-800/50 px-4 py-3 text-center">
+          <p className="font-display text-sm tracking-wide text-moon-200">{roosterCrow}</p>
         </div>
       )}
 
