@@ -2,6 +2,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { byId, byTeam, TEAM_LABELS, type Character, type Team } from "../../data/characters";
 import CharacterPortrait from "../../components/CharacterPortrait";
 import {
+  buildPresetCounts,
+  CAST_PRESETS,
   eligibleActorCards,
   eligibleMiddleCards,
   randomActorCards,
@@ -190,6 +192,17 @@ export default function RoleSelectStep({
       counts: { ...prev.counts, [id]: Math.max(0, (prev.counts[id] ?? 0) + delta) },
     }));
 
+  // One-tap curated cast, sized to the seats available. Clears any Thief/Actor
+  // piles since the presets never use those roles.
+  const applyPreset = (roles: string[]) =>
+    setDraft((prev) => ({
+      ...prev,
+      counts: buildPresetCounts({ id: "", name: "", blurb: "", roles }, roleSlots(prev)),
+      randomize: false,
+      middleCards: [],
+      actorCards: [],
+    }));
+
   return (
     <div className="flex flex-col gap-4">
       {/* Live tally */}
@@ -223,6 +236,26 @@ export default function RoleSelectStep({
           extra mystery.
         </p>
       )}
+
+      {/* One-tap curated casts, sized to the current player count. */}
+      <section>
+        <h3 className="mb-2 border-b border-pine-600 pb-1 font-display text-sm tracking-[0.2em] text-moss-300 uppercase">
+          Quick casts
+        </h3>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {CAST_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => applyPreset(p.roles)}
+              className="rounded-lg border border-pine-600 bg-night-800/40 p-3 text-left transition-colors hover:border-moss-400"
+            >
+              <p className="font-display text-sm text-moon-100">{p.name}</p>
+              <p className="mt-0.5 text-[0.7rem] leading-snug text-moss-300">{p.blurb}</p>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {TEAM_ORDER.map((team) => (
         <section key={team}>

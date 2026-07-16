@@ -126,6 +126,59 @@ export function recommendedWolves(players: number): number {
   return Math.max(1, Math.round(players / 4));
 }
 
+/**
+ * Curated one-tap casts. Each lists the special roles to add (in priority order)
+ * after the recommended wolves; any seats left over are filled with plain
+ * Villagers. Roles that need extra setup (Thief/Actor cards) or come as a block
+ * (Two Sisters/Three Brothers) are deliberately left out so a preset is always
+ * ready to deal.
+ */
+export interface CastPreset {
+  id: string;
+  name: string;
+  blurb: string;
+  /** Special roles added after the wolves, highest priority first. */
+  roles: string[];
+}
+
+export const CAST_PRESETS: CastPreset[] = [
+  {
+    id: "beginner",
+    name: "Beginner",
+    blurb: "Wolves, a Seer and a Hunter — easy to teach.",
+    roles: ["seer", "hunter"],
+  },
+  {
+    id: "balanced",
+    name: "Balanced",
+    blurb: "A well-rounded village with the classic powers.",
+    roles: ["seer", "defender", "witch", "hunter"],
+  },
+  {
+    id: "mayhem",
+    name: "Mayhem",
+    blurb: "A cauldron of special roles for chaos-lovers.",
+    roles: ["seer", "witch", "hunter", "cupid", "fox", "raven", "wild-child", "little-girl", "angel"],
+  },
+];
+
+/**
+ * Turn a preset into a counts map sized to the seats available: the recommended
+ * wolves, then each special role while seats remain, then Villagers for the rest.
+ */
+export function buildPresetCounts(preset: CastPreset, slots: number): Record<string, number> {
+  const wolves = recommendedWolves(slots);
+  const counts: Record<string, number> = { werewolf: wolves };
+  let used = wolves;
+  for (const id of preset.roles) {
+    if (used >= slots) break;
+    counts[id] = 1;
+    used++;
+  }
+  if (used < slots) counts.villager = slots - used;
+  return counts;
+}
+
 /** Passive village roles used to fill leftover seats when randomizing. */
 export const PASSIVE_FILLERS: Character[] = CHARACTERS.filter(
   (c) => c.nightOrder === null && c.team === "village",
