@@ -28,6 +28,7 @@ const IMPLEMENTED_WAKE = new Set<string>([
   "two-sisters",
   "three-brothers",
   "wild-child",
+  "white-werewolf",
   "pyromaniac",
   "piper",
 ]);
@@ -203,6 +204,9 @@ interface Snapshot {
   judgeUsed: boolean;
   foxDone: string[];
   ravenCursed: string | null;
+  packEnraged: boolean;
+  whiteWolfKill: string | null;
+  angelWon: boolean;
 }
 
 /**
@@ -234,7 +238,11 @@ export default function NightPhase({
 
   // Night-1 wake queue (roles that wake, are in play, and are implemented).
   const initialWakeQueue = NIGHT_SEQUENCE.filter(
-    (c) => IMPLEMENTED_WAKE.has(c.id) && players.some((p) => baseRole[p] === c.id),
+    (c) =>
+      IMPLEMENTED_WAKE.has(c.id) &&
+      // The White Werewolf hunts only on even nights, so never on night one.
+      c.id !== "white-werewolf" &&
+      players.some((p) => baseRole[p] === c.id),
   ).map((c) => c.id);
 
   const [dead, setDead] = useState<string[]>([]);
@@ -272,6 +280,13 @@ export default function NightPhase({
   // The Raven's cursed player: carries two extra guilty votes into the coming
   // day, badged "+2" on the vote circle, then clears when the next night falls.
   const [ravenCursed, setRavenCursed] = useState<string | null>(null);
+  // The pack is owed a double kill next night because a Werewolf Cub was slain.
+  const [packEnraged, setPackEnraged] = useState(false);
+  // The fellow wolf the White Werewolf marks on their off-night kill (folds into
+  // the night's deaths, then clears).
+  const [whiteWolfKill, setWhiteWolfKill] = useState<string | null>(null);
+  // The Angel achieved their wish — eliminated on the very first day or night.
+  const [angelWon, setAngelWon] = useState(false);
   // Actor: which of the three fixed card positions are spent, and tonight's pick.
   // Positions stay put across nights (0/1 top row, 2 bottom-centre) so spent
   // cards leave a gap and the survivors keep their placement.
@@ -375,6 +390,9 @@ export default function NightPhase({
     judgeUsed,
     foxDone,
     ravenCursed,
+    packEnraged,
+    whiteWolfKill,
+    angelWon,
   });
   const pushHistory = () => setHistory((h) => [...h, snapshot()]);
   const undo = () => {
@@ -425,6 +443,9 @@ export default function NightPhase({
     setJudgeUsed(prev.judgeUsed);
     setFoxDone(prev.foxDone);
     setRavenCursed(prev.ravenCursed);
+    setPackEnraged(prev.packEnraged);
+    setWhiteWolfKill(prev.whiteWolfKill);
+    setAngelWon(prev.angelWon);
     setHistory((h) => h.slice(0, -1));
   };
   const canUndo = history.length > 0;
@@ -441,15 +462,47 @@ export default function NightPhase({
   const observedRole = (p: string) => (roleOf(p) === "traitor" ? "villager" : roleOf(p));
   const readsAsWolf = (p: string) => teamOf(p) === "werewolf" && roleOf(p) !== "traitor";
 
+  // How many victims the wolves may take tonight: one, plus the Big Bad Wolf's
+  // bonus (while the pack is still whole) and the Werewolf Cub's posthumous rage.
+  const bigBadActive =
+    players.some((p) => roleOf(p) === "big-bad-wolf" && !dead.includes(p)) &&
+    !dead.some((p) => readsAsWolf(p));
+  const nightKillCap = 1 + (bigBadActive ? 1 : 0) + (packEnraged ? 1 : 0);
+
+  // The Bear Tamer's bear growls at dawn if either of its keeper's nearest living
+  // neighbours (around the seating circle) is a werewolf. The Traitor has no wolf
+  // scent, and a turned Wild Child does — both handled by readsAsWolf.
+  const bearGrowls = (): boolean => {
+    const n = players.length;
+    const nearestLiving = (start: number, step: number): string | null => {
+      for (let k = 1; k < n; k++) {
+        const cand = players[(((start + step * k) % n) + n) % n];
+        if (!dead.includes(cand)) return cand;
+      }
+      return null;
+    };
+    return players.some((p, i) => {
+      if (roleOf(p) !== "bear-tamer" || dead.includes(p)) return false;
+      const left = nearestLiving(i, -1);
+      const right = nearestLiving(i, 1);
+      return [left, right].some((q) => q !== null && q !== p && readsAsWolf(q));
+    });
+  };
+
   // Who (if anyone) has won given a hypothetical set of dead players. Pulled out
   // so a Hunter's morning shot can be checked for a game-ending result on the spot.
   const winnerFor = (
     deadList: string[],
-  ): "village" | "werewolf" | "pyromaniac" | "piper" | null => {
+  ): "village" | "werewolf" | "pyromaniac" | "piper" | "white-werewolf" | "angel" | null => {
+    // The Angel's wish, granted the moment they fall on the first day or night,
+    // ends the game outright — checked before every other faction.
+    if (angelWon) return "angel";
     const live = players.filter((p) => !deadList.includes(p));
     const wolves = live.filter((p) => teamOf(p) === "werewolf").length;
     const pyros = live.filter((p) => roleOf(p) === "pyromaniac");
     const pipers = live.filter((p) => roleOf(p) === "piper");
+    // The White Werewolf's private victory: outlast every other soul, pack included.
+    if (live.length === 1 && roleOf(live[0]) === "white-werewolf") return "white-werewolf";
     // Piper wins the moment every other living player is charmed.
     if (pipers.length) {
       const others = live.filter((p) => !pipers.includes(p));
@@ -601,6 +654,19 @@ export default function NightPhase({
         ];
       }
     }
+    // A Werewolf Cub slain (any way) whips the surviving pack into a double kill
+    // on the following night.
+    if (r.deaths.some((p) => roleOf(p) === "werewolf-cub")) {
+      setPackEnraged(true);
+      notes = [
+        ...notes,
+        "The Werewolf Cub has fallen — the pack will take two victims next night.",
+      ];
+    }
+    // The Angel's wish is granted if they are eliminated on the first day or night.
+    if (round === 1 && r.deaths.some((p) => roleOf(p) === "angel")) {
+      setAngelWon(true);
+    }
     setLastNotes(notes);
     setRes(null);
     setResPick(null);
@@ -713,6 +779,17 @@ export default function NightPhase({
         setPendingBurn([]);
         setSoaked([]);
       }
+
+      // The White Werewolf's private kill of a fellow wolf lands now — a guaranteed
+      // strike its victim can't be shielded from.
+      if (whiteWolfKill && !dead.includes(whiteWolfKill) && !deaths.includes(whiteWolfKill)) {
+        deaths = [...deaths, whiteWolfKill];
+        notes.push(`The White Werewolf turned on ${whiteWolfKill} — devoured by its own kind.`);
+      }
+      if (whiteWolfKill) setWhiteWolfKill(null);
+
+      // The Werewolf Cub's avenging double-kill (if any) is spent this night.
+      if (packEnraged) setPackEnraged(false);
     } else if (!powersDisabled) {
       // Day vote — the Prince and Village Idiot may dodge the noose once.
       const prince = deaths.find((p) => roleOf(p) === "prince" && !princeUsed.includes(p));
@@ -873,6 +950,9 @@ export default function NightPhase({
     } else {
       notes.push(`${shooter} — the Hunter — holds their fire.`);
     }
+    if (newDeaths.some((p) => roleOf(p) === "werewolf-cub")) setPackEnraged(true);
+    const angelNow = round === 1 && newDeaths.some((p) => roleOf(p) === "angel");
+    if (angelNow) setAngelWon(true);
     if (newDeaths.length) setDead((d) => [...d, ...newDeaths]);
     setLastDeaths((prev) => [...prev, ...newDeaths]);
     setLastNotes((prev) => [...prev, ...notes]);
@@ -880,7 +960,7 @@ export default function NightPhase({
     setResPick(null);
     if (queue.length) {
       setView("hunter"); // the next queued Hunter fires
-    } else if (winnerFor([...dead, ...newDeaths])) {
+    } else if (angelNow || winnerFor([...dead, ...newDeaths])) {
       setView("board"); // the shot ended the game — show the dawn board's result
     } else {
       beginDay(); // no one left to fire; the day proper begins
@@ -909,7 +989,15 @@ export default function NightPhase({
   };
 
   const toggle = (name: string) =>
-    setPending((p) => (p.includes(name) ? p.filter((x) => x !== name) : [...p, name]));
+    setPending((p) =>
+      p.includes(name)
+        ? p.filter((x) => x !== name)
+        : // At night the wolves may mark only as many victims as they're owed;
+          // by day the count is unbounded (ties are settled at the table).
+          isNight && p.length >= nightKillCap
+          ? p
+          : [...p, name],
+    );
 
   /* --------------------------- Night wake-up ----------------------------- */
 
@@ -928,6 +1016,8 @@ export default function NightPhase({
             .filter((p) => !dead.includes(p) && roleOf(p) === "fox")
             .every((p) => foxDone.includes(p))
         ) &&
+        // The White Werewolf strikes only every other night (even nights).
+        !(c.id === "white-werewolf" && rnd % 2 !== 0) &&
         players.some((p) => !dead.includes(p) && roleOf(p) === c.id),
     ).map((c) => c.id);
 
@@ -1064,6 +1154,12 @@ export default function NightPhase({
   /** Raven curses tonight's target — two extra votes fall on them come day. */
   const confirmRaven = () => {
     setRavenCursed(wakePick);
+    advanceWake();
+  };
+
+  /** White Werewolf marks a fellow wolf to devour tonight, then moves on. */
+  const confirmWhiteWolf = () => {
+    setWhiteWolfKill(wakePick);
     advanceWake();
   };
 
@@ -2243,6 +2339,48 @@ export default function NightPhase({
       );
     }
 
+    // White Werewolf — on even nights, may secretly devour a fellow wolf.
+    if (roleId === "white-werewolf") {
+      const prey = players.filter((p) => !dead.includes(p) && !holders.includes(p) && readsAsWolf(p));
+      return (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+            The White Werewolf wakes
+          </h1>
+          <p className="max-w-sm text-sm text-moss-200">
+            Wake <span className="text-moon-100">{holderLabel}</span>. Once every two nights they
+            may turn on their own — choose a fellow wolf to devour, or spare them tonight.
+          </p>
+          {referenceButtons}
+          {prey.length ? (
+            <div className="flex flex-wrap justify-center gap-2">
+              {prey.map((t) => (
+                <button key={t} type="button" onClick={() => setWakePick(t)} className={pickBtn(t)}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-moss-400 italic">No fellow wolves are left to devour.</p>
+          )}
+          <div className="flex w-full max-w-sm gap-3">
+            <button className="btn-lantern flex-1 px-4 py-3" onClick={advanceWake}>
+              Spare them
+            </button>
+            <button
+              className="btn-lantern flex-[2] px-4 py-3 text-lg"
+              disabled={!wakePick}
+              onClick={confirmWhiteWolf}
+            >
+              {wakePick ? `Devour ${wakePick} →` : "Choose a wolf"}
+            </button>
+          </div>
+          {undoRow}
+          {referenceOverlay}
+        </div>
+      );
+    }
+
     // Unknown/unhandled role — skip gracefully (shouldn't happen).
     return (
       <div className="flex flex-col items-center gap-4 py-6 text-center">
@@ -2415,9 +2553,20 @@ export default function NightPhase({
         {referenceButtons}
         <p className="max-w-sm text-center text-sm text-moss-200">
           {isNight
-            ? "The werewolves stalk the village. Tap tonight's victim."
+            ? nightKillCap > 1
+              ? `The werewolves stalk the village. Tap tonight's victims — up to ${nightKillCap}.`
+              : "The werewolves stalk the village. Tap tonight's victim."
             : "The village gathers and votes. Tap who is sent to the gallows."}
         </p>
+        {isNight && nightKillCap > 1 && (
+          <p className="-mt-2 max-w-sm text-center text-xs text-blood-300">
+            {packEnraged && bigBadActive
+              ? "The pack rages for the fallen cub and the Big Bad Wolf still hunts — two extra victims tonight."
+              : packEnraged
+                ? "The pack avenges the Werewolf Cub — a second victim tonight."
+                : "The Big Bad Wolf takes a second victim while the pack is whole."}
+          </p>
+        )}
 
         <PlayerCircle
           players={players}
@@ -2531,6 +2680,9 @@ export default function NightPhase({
   const pendingShot = isNight && pendingHunters.length > 0;
   const shownResult = pendingShot ? null : result;
 
+  // At dawn the Bear Tamer's bear growls if a wolf now sits beside its keeper.
+  const growl = isNight && bearGrowls();
+
   return (
     <div className="flex flex-col gap-4">
       <div className="text-center">
@@ -2555,6 +2707,14 @@ export default function NightPhase({
         <div className="mt-3">{referenceButtons}</div>
       </div>
 
+      {growl && (
+        <div className="rounded-lg border border-bark-400 bg-bark-500/15 px-4 py-3 text-center">
+          <p className="font-display text-sm tracking-wide text-bark-200">
+            🐻 The bear growls — a werewolf sits beside the Bear Tamer.
+          </p>
+        </div>
+      )}
+
       <NoticeBoard items={boardItems} />
 
       {shownResult ? (
@@ -2573,7 +2733,11 @@ export default function NightPhase({
                 ? "The werewolves win"
                 : result === "pyromaniac"
                   ? "The Pyromaniac wins"
-                  : "The Piper wins"}
+                  : result === "white-werewolf"
+                    ? "The White Werewolf wins"
+                    : result === "angel"
+                      ? "The Angel wins"
+                      : "The Piper wins"}
           </p>
           <p className="mt-1 text-sm text-moss-200">
             {result === "village"
@@ -2582,7 +2746,11 @@ export default function NightPhase({
                 ? "The wolves now equal or outnumber the village."
                 : result === "pyromaniac"
                   ? "Only the arsonist is left amid the ashes."
-                  : "Every soul left alive dances to the Piper's tune."}
+                  : result === "white-werewolf"
+                    ? "The lone white wolf has outlasted every other soul."
+                    : result === "angel"
+                      ? "Martyred on the first day — the Angel got their wish."
+                      : "Every soul left alive dances to the Piper's tune."}
           </p>
         </div>
       ) : null}
