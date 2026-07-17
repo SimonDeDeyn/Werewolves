@@ -48,6 +48,23 @@ const IMPLEMENTED_WAKE = new Set<string>([
 ]);
 
 /**
+ * Roles whose holders wake together as a set rather than one at a time — the
+ * siblings meet each other, so splitting them into separate turns is nonsense.
+ * Every other waking role gets one turn per holder.
+ */
+const GROUP_WAKE = new Set<string>(["two-sisters", "three-brothers"]);
+
+/**
+ * One holder's turn at a waking role. The queue is built per holder so that two
+ * players sharing a role (the Vile Doppelgänger's copy, above all) each get their
+ * own prompt and their own use of the power, the dealt holder going first.
+ */
+interface WakeTurn {
+  role: string;
+  player: string;
+}
+
+/**
  * Atmospheric flavor lines for the day/night transition beat. One is chosen per
  * transition by a stable index off the round number, so the same beat never
  * re-rolls its text on a re-render but each dawn/dusk reads a little different.
@@ -210,28 +227,33 @@ export interface Snapshot {
   round: number;
   phase: Phase;
   view: View;
-  wakeQueue: string[];
+  wakeQueue: WakeTurn[];
   wakePick: string | null;
   wakePicks: string[];
   wakeShown: boolean;
-  lovers: string[];
-  roleModel: string | null;
+  loverPairs: string[][];
+  roleModels: Record<string, string>;
   turnedWolves: string[];
   soaked: string[];
   charmed: string[];
   pendingBurn: string[];
-  protectedPlayer: string | null;
-  lastProtected: string | null;
-  sleepwalkerVisit: string | null;
-  lastVisit: string | null;
+  protectedBy: Record<string, string>;
+  lastProtectedBy: Record<string, string>;
+  visits: Record<string, string>;
+  lastVisits: Record<string, string>;
   seerViews: string[];
   actorUsedIdx: number[];
   actorPick: number | null;
-  wolfFatherUsed: boolean;
-  witchHealUsed: boolean;
-  witchPoisonUsed: boolean;
+  wolfFatherUsed: string[];
+  witchHealUsed: string[];
+  witchPoisonUsed: string[];
   witchHeal: string | null;
   witchPoison: string | null;
+  wolfFatherQueue: string[];
+  whiteWolfQueue: string[];
+  witchQueue: string[];
+  witchHeals: string[];
+  witchPoisons: string[];
   pending: string[];
   pendingHunters: string[];
   lastAttacked: string[];
@@ -248,12 +270,12 @@ export interface Snapshot {
   princeUsed: string[];
   idiotSpared: string[];
   elderSurvived: string[];
-  judgeUsed: boolean;
+  judgeUsed: string[];
   foxDone: string[];
-  ravenCursed: string | null;
+  ravenCursed: string[];
   packEnraged: boolean;
-  whiteWolfKill: string | null;
-  wolfFatherTarget: string | null;
+  whiteWolfKill: string[];
+  wolfFatherTarget: string[];
   angelWon: boolean;
   wolfSorcery: boolean;
   wolfKillCount: number;
@@ -298,26 +320,35 @@ export default function NightPhase({
     [assignments],
   );
 
-  // Night-1 wake queue (roles that wake, are in play, and are implemented).
-  const initialWakeQueue = NIGHT_SEQUENCE.filter(
-    (c) => IMPLEMENTED_WAKE.has(c.id) && players.some((p) => baseRole[p] === c.id),
-  ).map((c) => c.id);
+  // Night-1 wake queue. One turn per HOLDER, not per role, so a Vile Doppelgänger
+  // who copied a power takes their own separate turn at it rather than sharing the
+  // original's prompt. Group roles still wake as one (see GROUP_WAKE).
+  const initialWakeQueue: WakeTurn[] = NIGHT_SEQUENCE.flatMap((c) => {
+    if (!IMPLEMENTED_WAKE.has(c.id)) return [];
+    const holders = players.filter((p) => baseRole[p] === c.id);
+    if (!holders.length) return [];
+    return GROUP_WAKE.has(c.id)
+      ? [{ role: c.id, player: holders[0] }]
+      : holders.map((p) => ({ role: c.id, player: p }));
+  });
 
   const [dead, setDead] = useState<string[]>([]);
   const [round, setRound] = useState(1);
   const [phase, setPhase] = useState<Phase>("night");
   const [view, setView] = useState<View>(initialWakeQueue.length ? "wake" : "select");
-  // Roles still owed a wake-up prompt this night, in order.
-  const [wakeQueue, setWakeQueue] = useState<string[]>(initialWakeQueue);
+  // Turns still owed a wake-up prompt this night, in order.
+  const [wakeQueue, setWakeQueue] = useState<WakeTurn[]>(initialWakeQueue);
   // Per-step scratch for the current wake prompt (e.g. the Seer's chosen target).
   const [wakePick, setWakePick] = useState<string | null>(null);
   const [wakePicks, setWakePicks] = useState<string[]>([]);
   const [wakeShown, setWakeShown] = useState(false);
 
-  // Cupid's two lovers — if one dies, the other dies of heartbreak.
-  const [lovers, setLovers] = useState<string[]>([]);
-  // Wild Child's role model, and any Wild Children who have turned werewolf.
-  const [roleModel, setRoleModel] = useState<string | null>(null);
+  // Every pair Cupid's arrow has bound — one pair per Cupid, since a Doppelgänger
+  // who copied Cupid fires their own arrow. If one of a pair dies, so does the
+  // other, and a player caught in two pairs chains the heartbreak onward.
+  const [loverPairs, setLoverPairs] = useState<string[][]>([]);
+  // Each Wild Child's chosen role model, keyed by the child.
+  const [roleModels, setRoleModels] = useState<Record<string, string>>({});
   const [turnedWolves, setTurnedWolves] = useState<string[]>([]);
   // Pyromaniac's soaked houses and Piper's charmed players (solo win tracking).
   const [soaked, setSoaked] = useState<string[]>([]);
@@ -325,11 +356,15 @@ export default function NightPhase({
   // Soaked houses the Pyromaniac ignited this night — burned in at record time.
   const [pendingBurn, setPendingBurn] = useState<string[]>([]);
   // Defender's charge this night, and last night's (can't be repeated).
-  const [protectedPlayer, setProtectedPlayer] = useState<string | null>(null);
-  const [lastProtected, setLastProtected] = useState<string | null>(null);
+  // Each Defender's charge this night and last night, keyed by the defender, so
+  // two Defenders can't overwrite one another and each keeps their own "not the
+  // same person twice running" rule.
+  const [protectedBy, setProtectedBy] = useState<Record<string, string>>({});
+  const [lastProtectedBy, setLastProtectedBy] = useState<Record<string, string>>({});
   // Sleepwalker's visit this night, and last night's (can't be repeated).
-  const [sleepwalkerVisit, setSleepwalkerVisit] = useState<string | null>(null);
-  const [lastVisit, setLastVisit] = useState<string | null>(null);
+  // Each Sleepwalker's visit this night and last night, keyed by the walker.
+  const [visits, setVisits] = useState<Record<string, string>>({});
+  const [lastVisits, setLastVisits] = useState<Record<string, string>>({});
   // Players the Seer glimpsed this night, so the scroll can recount it. Cleared
   // when the night ends.
   const [seerViews, setSeerViews] = useState<string[]>([]);
@@ -342,16 +377,17 @@ export default function NightPhase({
   const [foxDone, setFoxDone] = useState<string[]>([]);
   // The Raven's cursed player: carries two extra guilty votes into the coming
   // day, badged "+2" on the vote circle, then clears when the next night falls.
-  const [ravenCursed, setRavenCursed] = useState<string | null>(null);
+  // Everyone a Raven cursed tonight — one omen per Raven, each worth +2 votes.
+  const [ravenCursed, setRavenCursed] = useState<string[]>([]);
   // The pack is owed a double kill next night because a Werewolf Cub was slain.
   const [packEnraged, setPackEnraged] = useState(false);
   // The fellow wolf the White Werewolf marks on their off-night kill (folds into
   // the night's deaths, then clears).
-  const [whiteWolfKill, setWhiteWolfKill] = useState<string | null>(null);
+  const [whiteWolfKill, setWhiteWolfKill] = useState<string[]>([]);
   // Who the Accursed Wolf-Father bit tonight. The bite only takes hold at dawn:
   // if anything pulls them out of death first (the Witch's brew, the Defender's
   // shield) the convert simply lives on and his one-shot power is wasted.
-  const [wolfFatherTarget, setWolfFatherTarget] = useState<string | null>(null);
+  const [wolfFatherTarget, setWolfFatherTarget] = useState<string[]>([]);
   // The Angel achieved their wish — eliminated on the very first day or night.
   const [angelWon, setAngelWon] = useState(false);
   // What the wolves did this night, so the Rooster can crow a fitting (but still
@@ -364,13 +400,23 @@ export default function NightPhase({
   // cards leave a gap and the survivors keep their placement.
   const [actorUsedIdx, setActorUsedIdx] = useState<number[]>([]);
   const [actorPick, setActorPick] = useState<number | null>(null);
-  // Accursed Wolf-Father's one-time villager-to-wolf conversion.
-  const [wolfFatherUsed, setWolfFatherUsed] = useState(false);
-  // The Witch's two once-per-game potions, and her picks on the current night.
-  const [witchHealUsed, setWitchHealUsed] = useState(false);
-  const [witchPoisonUsed, setWitchPoisonUsed] = useState(false);
+  // Wolf-Fathers who have spent their one villager-to-wolf bite.
+  const [wolfFatherUsed, setWolfFatherUsed] = useState<string[]>([]);
+  // Each Witch owns her OWN pair of potions: these list the witches who have spent
+  // their heal / their poison, so a Doppelgänger who copied the Witch still holds
+  // a full set. The picks below belong to whichever witch is taking her turn.
+  const [witchHealUsed, setWitchHealUsed] = useState<string[]>([]);
+  const [witchPoisonUsed, setWitchPoisonUsed] = useState<string[]>([]);
   const [witchHeal, setWitchHeal] = useState<string | null>(null);
   const [witchPoison, setWitchPoison] = useState<string | null>(null);
+  // Holders still owed a turn at each post-kill interlude tonight, dealt holder
+  // first, so a copy of the role acts after the original rather than instead.
+  const [wolfFatherQueue, setWolfFatherQueue] = useState<string[]>([]);
+  const [whiteWolfQueue, setWhiteWolfQueue] = useState<string[]>([]);
+  const [witchQueue, setWitchQueue] = useState<string[]>([]);
+  // Everything the night's witches healed / poisoned, gathered across their turns.
+  const [witchHeals, setWitchHeals] = useState<string[]>([]);
+  const [witchPoisons, setWitchPoisons] = useState<string[]>([]);
   const [pending, setPending] = useState<string[]>([]);
   // Hunters slain in the night who owe a public shot once the village wakes —
   // resolved on the dawn board, not silently at night. Emptied as each fires.
@@ -396,7 +442,7 @@ export default function NightPhase({
   const [idiotSpared, setIdiotSpared] = useState<string[]>([]);
   const [elderSurvived, setElderSurvived] = useState<string[]>([]);
   // The Stuttering Judge's one-time second vote (called from the day board).
-  const [judgeUsed, setJudgeUsed] = useState(false);
+  const [judgeUsed, setJudgeUsed] = useState<string[]>([]);
 
   // Read-only moderator reference overlay: night wake order or the full roster.
   const [reference, setReference] = useState<"wake" | "roster" | null>(null);
@@ -442,16 +488,16 @@ export default function NightPhase({
     wakePick,
     wakePicks,
     wakeShown,
-    lovers,
-    roleModel,
+    loverPairs,
+    roleModels,
     turnedWolves,
     soaked,
     charmed,
     pendingBurn,
-    protectedPlayer,
-    lastProtected,
-    sleepwalkerVisit,
-    lastVisit,
+    protectedBy,
+    lastProtectedBy,
+    visits,
+    lastVisits,
     seerViews,
     actorUsedIdx,
     actorPick,
@@ -460,6 +506,11 @@ export default function NightPhase({
     witchPoisonUsed,
     witchHeal,
     witchPoison,
+    wolfFatherQueue,
+    whiteWolfQueue,
+    witchQueue,
+    witchHeals,
+    witchPoisons,
     pending,
     pendingHunters,
     lastAttacked,
@@ -499,16 +550,16 @@ export default function NightPhase({
     setWakePick(prev.wakePick);
     setWakePicks(prev.wakePicks);
     setWakeShown(prev.wakeShown);
-    setLovers(prev.lovers);
-    setRoleModel(prev.roleModel);
+    setLoverPairs(prev.loverPairs);
+    setRoleModels(prev.roleModels);
     setTurnedWolves(prev.turnedWolves);
     setSoaked(prev.soaked);
     setCharmed(prev.charmed);
     setPendingBurn(prev.pendingBurn);
-    setProtectedPlayer(prev.protectedPlayer);
-    setLastProtected(prev.lastProtected);
-    setSleepwalkerVisit(prev.sleepwalkerVisit);
-    setLastVisit(prev.lastVisit);
+    setProtectedBy(prev.protectedBy);
+    setLastProtectedBy(prev.lastProtectedBy);
+    setVisits(prev.visits);
+    setLastVisits(prev.lastVisits);
     setSeerViews(prev.seerViews);
     setActorUsedIdx(prev.actorUsedIdx);
     setActorPick(prev.actorPick);
@@ -517,6 +568,11 @@ export default function NightPhase({
     setWitchPoisonUsed(prev.witchPoisonUsed);
     setWitchHeal(prev.witchHeal);
     setWitchPoison(prev.witchPoison);
+    setWolfFatherQueue(prev.wolfFatherQueue);
+    setWhiteWolfQueue(prev.whiteWolfQueue);
+    setWitchQueue(prev.witchQueue);
+    setWitchHeals(prev.witchHeals);
+    setWitchPoisons(prev.witchPoisons);
     setPendingHunters(prev.pendingHunters);
     setPending(prev.pending);
     setLastAttacked(prev.lastAttacked);
@@ -566,6 +622,17 @@ export default function NightPhase({
     turnedWolves.includes(p) ? "werewolf" : roleOf(p) === "traitor" ? "villager" : roleOf(p);
   /** The role name an inspection actually revealed — the disguise, not the truth. */
   const observedName = (p: string) => byId(observedRole(p))?.name ?? "?";
+
+  /**
+   * Living holders of a role, the player who was DEALT it first and anyone who
+   * merely copied it (a Vile Doppelgänger) after. Everything that can happen twice
+   * — wake turns, the Witch's potions, the Wolf-Father's bite — walks this order,
+   * so the original always decides before the copy.
+   */
+  const orderedHolders = (roleId: string) =>
+    players
+      .filter((p) => !dead.includes(p) && roleOf(p) === roleId)
+      .sort((a, b) => Number(baseRole[a] !== roleId) - Number(baseRole[b] !== roleId));
   const readsAsWolf = (p: string) => teamOf(p) === "werewolf" && roleOf(p) !== "traitor";
 
   // How many victims the wolves may take tonight: one, plus the Big Bad Wolf's
@@ -667,7 +734,7 @@ export default function NightPhase({
         !r.deaths.includes(p) &&
         !r.usedServants.includes(p) &&
         // A servant bound by Cupid loves too deeply to serve anyone else.
-        !lovers.includes(p) &&
+        !isLover(p) &&
         roleOf(p) === roleId,
     ) ?? null;
 
@@ -712,16 +779,32 @@ export default function NightPhase({
     return null;
   };
 
-  /** Cupid: a lover's death drags their partner along by heartbreak. */
+  /** Is this player bound by any Cupid's arrow? */
+  const isLover = (p: string) => loverPairs.some((pair) => pair.includes(p));
+
+  /**
+   * Cupid: a lover's death drags their partner along by heartbreak. With more than
+   * one Cupid there can be several pairs, and a player caught in two of them chains
+   * the grief onward — so keep sweeping until no new partner is pulled in.
+   */
   const expandLovers = (deaths: string[]): string[] => {
-    if (lovers.length !== 2) return deaths;
-    const [a, b] = lovers;
+    if (!loverPairs.length) return deaths;
     const out = [...deaths];
     const pull = (x: string) => {
-      if (!out.includes(x) && !dead.includes(x)) out.push(x);
+      if (!out.includes(x) && !dead.includes(x)) {
+        out.push(x);
+        return true;
+      }
+      return false;
     };
-    if (out.includes(a)) pull(b);
-    if (out.includes(b)) pull(a);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const [a, b] of loverPairs) {
+        if (out.includes(a) && pull(b)) grew = true;
+        if (out.includes(b) && pull(a)) grew = true;
+      }
+    }
     return out;
   };
 
@@ -741,17 +824,21 @@ export default function NightPhase({
       notes = [...notes, "The Elder dies by the village's hand — every villager power is undone."];
     }
     // Lovers always fall together in the same round (see expandLovers).
-    if (lovers.length === 2 && lovers.every((p) => r.deaths.includes(p))) {
-      notes = [...notes, `${lovers[0]} and ${lovers[1]} were lovers — heartbreak takes them both.`];
+    for (const pair of loverPairs) {
+      if (pair.every((p) => r.deaths.includes(p))) {
+        notes = [...notes, `${pair[0]} and ${pair[1]} were lovers — heartbreak takes them both.`];
+      }
     }
-    // Wild Child: their role model's real death turns them werewolf.
-    if (roleModel && r.deaths.includes(roleModel)) {
+    // Wild Child: their own role model's real death turns that child werewolf.
+    {
       const cubs = players.filter(
         (p) =>
           roleOf(p) === "wild-child" &&
           !dead.includes(p) &&
           !r.deaths.includes(p) &&
-          !turnedWolves.includes(p),
+          !turnedWolves.includes(p) &&
+          roleModels[p] !== undefined &&
+          r.deaths.includes(roleModels[p]),
       );
       if (cubs.length) {
         setTurnedWolves((w) => [...w, ...cubs]);
@@ -798,14 +885,16 @@ export default function NightPhase({
    * An omitted field means "nothing fresh — use what's already in state".
    */
   const record = (opts?: {
-    witch?: { heal: string | null; poison: string | null };
-    fatherTarget?: string | null;
-    whiteKill?: string | null;
+    heals?: string[];
+    poisons?: string[];
+    fatherBites?: string[];
+    whiteKills?: string[];
   }) => {
     pushHistory();
-    const witch = opts?.witch;
-    const father = opts?.fatherTarget !== undefined ? opts.fatherTarget : wolfFatherTarget;
-    const white = opts?.whiteKill !== undefined ? opts.whiteKill : whiteWolfKill;
+    const heals = opts?.heals ?? witchHeals;
+    const poisons = opts?.poisons ?? witchPoisons;
+    const bites = opts?.fatherBites ?? wolfFatherTarget;
+    const whites = opts?.whiteKills ?? whiteWolfKill;
     const raw = pending;
     setPending([]);
     // Remember who was marked this phase (wolves' victims / the condemned) so the
@@ -815,19 +904,20 @@ export default function NightPhase({
     const notes: string[] = [];
     let deaths = [...raw];
 
-    // The Witch's healing potion pulls one of the wolves' victims back before any
+    // Each Witch's healing brew pulls one of the wolves' victims back before any
     // other night power resolves.
-    if (witch?.heal) {
-      deaths = deaths.filter((p) => p !== witch.heal);
-      setWitchHealUsed(true);
-      notes.push(`The Witch's healing brew pulls ${witch.heal} back from the brink.`);
+    for (const healed of heals) {
+      if (!deaths.includes(healed)) continue;
+      deaths = deaths.filter((p) => p !== healed);
+      notes.push(`A Witch's healing brew pulls ${healed} back from the brink.`);
     }
 
     if (phase === "night") {
-      // The Defender's shield turns the wolves away from their charge (wolves only).
-      if (protectedPlayer && deaths.includes(protectedPlayer)) {
-        deaths = deaths.filter((p) => p !== protectedPlayer);
-        notes.push(`The Defender's shield turned the wolves away from ${protectedPlayer}.`);
+      // Each Defender's shield turns the wolves away from their charge (wolves only).
+      for (const guarded of Object.values(protectedBy)) {
+        if (!deaths.includes(guarded)) continue;
+        deaths = deaths.filter((p) => p !== guarded);
+        notes.push(`The Defender's shield turned the wolves away from ${guarded}.`);
       }
 
       // The Elder secretly shrugs off the wolves' first attack — before the
@@ -844,46 +934,46 @@ export default function NightPhase({
       }
 
       // Sleepwalker: away in an empty bed, or caught at the house she visited.
-      const sw = players.find((p) => roleOf(p) === "sleepwalker" && !dead.includes(p));
-      if (sw && sleepwalkerVisit) {
+      // Each walker resolves against her own visit.
+      for (const sw of players.filter((p) => roleOf(p) === "sleepwalker" && !dead.includes(p))) {
+        const visited = visits[sw];
+        if (!visited) continue;
         if (deaths.includes(sw)) {
           deaths = deaths.filter((p) => p !== sw);
-          notes.push("The Sleepwalker was out wandering — the wolves found her bed empty.");
+          notes.push(`${sw} was out wandering — the wolves found the Sleepwalker's bed empty.`);
         }
-        if (deaths.includes(sleepwalkerVisit) && !deaths.includes(sw)) {
+        if (deaths.includes(visited) && !deaths.includes(sw)) {
           deaths = [...deaths, sw];
-          notes.push(
-            `The Sleepwalker was caught at ${sleepwalkerVisit}'s house and slain alongside them.`,
-          );
+          notes.push(`The Sleepwalker was caught at ${visited}'s house and slain alongside them.`);
         }
         notes.push(
-          byId(roleOf(sleepwalkerVisit))?.nightOrder != null
-            ? `The Sleepwalker senses ${sleepwalkerVisit} acted suspiciously in the night.`
-            : `The Sleepwalker found ${sleepwalkerVisit} sleeping soundly.`,
+          byId(roleOf(visited))?.nightOrder != null
+            ? `The Sleepwalker senses ${visited} acted suspiciously in the night.`
+            : `The Sleepwalker found ${visited} sleeping soundly.`,
         );
       }
 
-      // The Accursed Wolf-Father's bite. It only takes hold on a victim the wolves
-      // actually killed: anything that pulled them out of death first (the Witch's
+      // Each Accursed Wolf-Father's bite. It only takes hold on a victim the wolves
+      // actually killed: anything that pulled them out of death first (a Witch's
       // brew, the Defender's shield, the Elder's hide) purges the bite and wastes
-      // his one-shot power. A convert keeps their own card and every power that
+      // that one-shot power. A convert keeps their own card and every power that
       // goes with it — only their allegiance changes, so turnedWolves is enough.
-      if (father) {
-        if (deaths.includes(father)) {
-          deaths = deaths.filter((p) => p !== father);
-          setTurnedWolves((w) => [...w, father]);
+      for (const bitten of bites) {
+        if (deaths.includes(bitten)) {
+          deaths = deaths.filter((p) => p !== bitten);
+          setTurnedWolves((w) => (w.includes(bitten) ? w : [...w, bitten]));
           notes.push(
-            `The Accursed Wolf-Father's bite turns ${father} into a werewolf — they keep the ${roleName(
-              father,
+            `The Accursed Wolf-Father's bite turns ${bitten} into a werewolf — they keep the ${roleName(
+              bitten,
             )}'s powers but now hunt with the pack.`,
           );
         } else {
           notes.push(
-            `${father} was pulled from death before the Wolf-Father's bite took hold — his power is wasted.`,
+            `${bitten} was pulled from death before the Wolf-Father's bite took hold — his power is wasted.`,
           );
         }
-        setWolfFatherTarget(null);
       }
+      if (wolfFatherTarget.length) setWolfFatherTarget([]);
 
       // A Rusty Sword Knight slain by the wolves infects the wolf to their left.
       if (!powersDisabled) {
@@ -922,13 +1012,14 @@ export default function NightPhase({
         setSoaked([]);
       }
 
-      // The White Werewolf's private kill of a fellow wolf lands now — a guaranteed
-      // strike its victim can't be shielded from.
-      if (white && !dead.includes(white) && !deaths.includes(white)) {
-        deaths = [...deaths, white];
-        notes.push(`The White Werewolf turned on ${white} — devoured by its own kind.`);
+      // Each White Werewolf's private kill of a fellow wolf lands now — a
+      // guaranteed strike its victim can't be shielded from.
+      for (const eaten of whites) {
+        if (dead.includes(eaten) || deaths.includes(eaten)) continue;
+        deaths = [...deaths, eaten];
+        notes.push(`The White Werewolf turned on ${eaten} — devoured by its own kind.`);
       }
-      if (whiteWolfKill) setWhiteWolfKill(null);
+      if (whiteWolfKill.length) setWhiteWolfKill([]);
 
       // The Werewolf Cub's avenging double-kill (if any) is spent this night.
       if (packEnraged) setPackEnraged(false);
@@ -955,13 +1046,15 @@ export default function NightPhase({
       }
     }
 
-    // The Witch's poison is a direct kill — immune to the wolf-only protections
+    // Each Witch's poison is a direct kill — immune to the wolf-only protections
     // above, but it still triggers heartbreak, the Hunter, and the like.
-    if (witch?.poison) {
-      setWitchPoisonUsed(true);
-      if (!deaths.includes(witch.poison)) deaths = [...deaths, witch.poison];
-      notes.push(`The Witch's poison takes ${witch.poison}.`);
+    for (const slain of poisons) {
+      if (!deaths.includes(slain)) deaths = [...deaths, slain];
+      notes.push(`A Witch's poison takes ${slain}.`);
     }
+    // Tonight's potion picks are spent; the per-witch tallies persist.
+    if (witchHeals.length) setWitchHeals([]);
+    if (witchPoisons.length) setWitchPoisons([]);
 
     step({
       phase,
@@ -985,74 +1078,126 @@ export default function NightPhase({
    * choice is threaded along as an argument, since its setState hasn't landed yet.
    */
 
-  const beginKill = () => toWolfFather();
+  /**
+   * Open the chain: work out who is owed each interlude tonight and park those
+   * queues in state, then walk them. Each queue is threaded on the first hop too,
+   * because setState hasn't landed yet if a step falls straight through.
+   */
+  const beginKill = () => {
+    if (!isNight) {
+      record();
+      return;
+    }
+    // A wolf power, so the Elder's death doesn't disable the first two.
+    const fathers = orderedHolders("accursed-wolf-father").filter(
+      (p) => !wolfFatherUsed.includes(p),
+    );
+    const whites = round % 2 === 0 ? orderedHolders("white-werewolf") : [];
+    const witches = powersDisabled
+      ? []
+      : orderedHolders("witch").filter(
+          (p) => !witchHealUsed.includes(p) || !witchPoisonUsed.includes(p),
+        );
+    setWolfFatherQueue(fathers);
+    setWhiteWolfQueue(whites);
+    setWitchQueue(witches);
+    toWolfFather(fathers, whites, witches);
+  };
 
-  const toWolfFather = () => {
-    // A wolf power, so the Elder's death doesn't disable it. He can only bite
-    // someone the pack actually marked, and only a villager — never his own kind.
-    const ready =
-      !wolfFatherUsed &&
-      players.some((p) => roleOf(p) === "accursed-wolf-father" && !dead.includes(p));
-    if (isNight && ready && pending.some((p) => teamOf(p) === "village")) {
+  const toWolfFather = (fathers: string[], whites: string[], witches: string[]) => {
+    // He can only bite someone the pack actually marked, and only a villager.
+    if (fathers.length && pending.some((p) => teamOf(p) === "village")) {
       pushHistory();
       setResPick(null);
       setView("wolfFather");
       return;
     }
-    toWhiteWolf();
+    toWhiteWolf(whites, witches);
   };
 
-  /** Wolf-Father bites a marked villager (or lets the kill stand), then moves on. */
+  /** A Wolf-Father bites a marked villager (or lets the kill stand); next father, or on. */
   const confirmWolfFather = (victim: string | null) => {
+    const father = wolfFatherQueue[0];
+    const bites = victim ? [...wolfFatherTarget, victim] : wolfFatherTarget;
     if (victim) {
-      setWolfFatherTarget(victim);
-      setWolfFatherUsed(true); // spent even if the bite is later purged
+      setWolfFatherTarget(bites);
+      setWolfFatherUsed((u) => [...u, father]); // spent even if the bite is purged
       setWolfSorcery(true);
     }
-    toWhiteWolf(victim);
+    const rest = wolfFatherQueue.slice(1);
+    setWolfFatherQueue(rest);
+    // Another Wolf-Father still to answer? Stay put; the screen reads the queue.
+    if (rest.length && pending.some((p) => teamOf(p) === "village")) {
+      pushHistory();
+      setResPick(null);
+      return;
+    }
+    toWhiteWolf(whiteWolfQueue, witchQueue, bites);
   };
 
-  const toWhiteWolf = (fatherTarget?: string | null) => {
-    const holder = players.some((p) => roleOf(p) === "white-werewolf" && !dead.includes(p));
-    const prey = players.some(
+  const toWhiteWolf = (whites: string[], witches: string[], bites?: string[]) => {
+    const preyLeft = players.some(
       (p) => !dead.includes(p) && roleOf(p) !== "white-werewolf" && readsAsWolf(p),
     );
-    // Every other night only, and only while there's a packmate left to eat.
-    if (isNight && round % 2 === 0 && holder && prey) {
+    if (whites.length && preyLeft) {
       pushHistory();
       setWakePick(null);
       setView("whiteWolf");
       return;
     }
-    toWitch(fatherTarget);
+    toWitch(witches, bites);
   };
 
-  /** White Werewolf marks a fellow wolf to devour (or spares them), then moves on. */
+  /** A White Werewolf marks a fellow wolf to devour (or spares them); next, or on. */
   const confirmWhiteWolf = () => {
-    setWhiteWolfKill(wakePick);
-    if (wakePick) setWolfSorcery(true);
-    toWitch(undefined, wakePick);
-  };
-
-  const toWitch = (fatherTarget?: string | null, whiteKill?: string | null) => {
-    if (isNight && !powersDisabled) {
-      const witch = players.find((p) => roleOf(p) === "witch" && !dead.includes(p));
-      if (witch && (!witchHealUsed || !witchPoisonUsed)) {
-        pushHistory();
-        setWitchHeal(null);
-        setWitchPoison(null);
-        setView("witch");
-        return;
-      }
+    const kills = wakePick ? [...whiteWolfKill, wakePick] : whiteWolfKill;
+    if (wakePick) {
+      setWhiteWolfKill(kills);
+      setWolfSorcery(true);
     }
-    record({ fatherTarget, whiteKill });
+    const rest = whiteWolfQueue.slice(1);
+    setWhiteWolfQueue(rest);
+    if (rest.length) {
+      pushHistory();
+      setWakePick(null);
+      return;
+    }
+    toWitch(witchQueue, undefined, kills);
   };
 
-  /** Witch confirms her potions; the picks fold into the night's resolution. */
+  const toWitch = (witches: string[], bites?: string[], kills?: string[]) => {
+    if (witches.length) {
+      pushHistory();
+      setWitchHeal(null);
+      setWitchPoison(null);
+      setView("witch");
+      return;
+    }
+    record({ fatherBites: bites, whiteKills: kills });
+  };
+
+  /** A Witch spends her own potions; the next witch takes her turn, or we resolve. */
   const confirmWitch = () => {
-    record({ witch: { heal: witchHeal, poison: witchPoison } });
+    const witch = witchQueue[0];
+    const heals = witchHeal ? [...witchHeals, witchHeal] : witchHeals;
+    const poisons = witchPoison ? [...witchPoisons, witchPoison] : witchPoisons;
+    if (witchHeal) {
+      setWitchHeals(heals);
+      setWitchHealUsed((u) => [...u, witch]);
+    }
+    if (witchPoison) {
+      setWitchPoisons(poisons);
+      setWitchPoisonUsed((u) => [...u, witch]);
+    }
     setWitchHeal(null);
     setWitchPoison(null);
+    const rest = witchQueue.slice(1);
+    setWitchQueue(rest);
+    if (rest.length) {
+      pushHistory();
+      return;
+    }
+    record({ heals, poisons });
   };
 
   /** Servant: dies in place of a condemned player, sparing them. */
@@ -1119,25 +1264,26 @@ export default function NightPhase({
     if (target && !dead.includes(target)) {
       newDeaths.push(target);
       notes.push(`${shooter} — the Hunter — takes ${target} down with a dying shot.`);
-      // A lover of the target dies of heartbreak alongside them.
-      if (lovers.length === 2) {
-        const [a, b] = lovers;
-        const partner = target === a ? b : target === b ? a : null;
-        if (partner && !dead.includes(partner) && !newDeaths.includes(partner)) {
-          newDeaths.push(partner);
-          notes.push(`${partner} dies of heartbreak, bound to ${target}.`);
+      // Every lover of the target dies of heartbreak alongside them, chaining on
+      // through anyone bound by a second Cupid's arrow.
+      for (const pulled of expandLovers(newDeaths)) {
+        if (!newDeaths.includes(pulled)) {
+          newDeaths.push(pulled);
+          notes.push(`${pulled} dies of heartbreak, bound to ${target}.`);
         }
       }
       // Any Hunter felled by this shot fires next, still in the morning.
       queue = [...queue, ...newDeaths.filter((p) => roleOf(p) === "hunter")];
-      // A slain role model turns the Wild Child, exactly as in the night resolution.
-      if (roleModel && newDeaths.includes(roleModel)) {
+      // A slain role model turns that Wild Child, exactly as in the night resolution.
+      {
         const cubs = players.filter(
           (p) =>
             roleOf(p) === "wild-child" &&
             !dead.includes(p) &&
             !newDeaths.includes(p) &&
-            !turnedWolves.includes(p),
+            !turnedWolves.includes(p) &&
+            roleModels[p] !== undefined &&
+            newDeaths.includes(roleModels[p]),
         );
         if (cubs.length) {
           setTurnedWolves((w) => [...w, ...cubs]);
@@ -1179,44 +1325,48 @@ export default function NightPhase({
 
   /* --------------------------- Night wake-up ----------------------------- */
 
-  /** Implemented waking roles with a living holder, in order, for a given night. */
-  const wakeRolesFor = (rnd: number): string[] =>
-    NIGHT_SEQUENCE.filter(
-      (c) =>
-        IMPLEMENTED_WAKE.has(c.id) &&
-        (!c.firstNightOnly || rnd === 1) &&
-        // The Actor borrows a role only for its first three nights.
-        !(c.id === "actor" && actorUsedIdx.length >= 3) &&
-        // A Fox whose sniff came up empty has lost the power for good.
-        !(
-          c.id === "fox" &&
-          players
-            .filter((p) => !dead.includes(p) && roleOf(p) === "fox")
-            .every((p) => foxDone.includes(p))
-        ) &&
-        players.some((p) => !dead.includes(p) && roleOf(p) === c.id),
-    ).map((c) => c.id);
+  /** Does this holder still hold the waking power their role grants? */
+  const hasWakePower = (roleId: string, p: string) => {
+    if (roleId === "fox") return !foxDone.includes(p);
+    // The Actor's three borrowed cards are one shared pile, spent by whoever takes them.
+    if (roleId === "actor") return actorUsedIdx.length < 3;
+    return true;
+  };
 
-  /** Finish the current wake prompt and move to the next role, or the kill. */
-  const advanceWake = () => {
+  /** One turn per living holder, in wake order, for a given night. */
+  const wakeTurnsFor = (rnd: number): WakeTurn[] =>
+    NIGHT_SEQUENCE.flatMap((c) => {
+      if (!IMPLEMENTED_WAKE.has(c.id)) return [];
+      if (c.firstNightOnly && rnd !== 1) return [];
+      const holders = orderedHolders(c.id);
+      if (!holders.length) return [];
+      if (GROUP_WAKE.has(c.id)) return [{ role: c.id, player: holders[0] }];
+      return holders
+        .filter((p) => hasWakePower(c.id, p))
+        .map((p) => ({ role: c.id, player: p }));
+    });
+
+  /** Finish the current wake prompt and move to the next turn, or the kill. */
+  const advanceWakeTo = (rest: WakeTurn[]) => {
     pushHistory();
-    const rest = wakeQueue.slice(1);
     setWakeQueue(rest);
     setWakePick(null);
     setWakePicks([]);
     setWakeShown(false);
+    setActorPick(null); // each Actor turns over their own card
     if (!rest.length) setView("select");
   };
+  const advanceWake = () => advanceWakeTo(wakeQueue.slice(1));
 
   /** Open the day: switch phase, let the night's powers lapse, show the vote. */
   const beginDay = () => {
     setPhase("day");
     setView("select");
-    // The night's protection / visit lapse; remember them so they can't repeat.
-    setLastProtected(protectedPlayer);
-    setProtectedPlayer(null);
-    setLastVisit(sleepwalkerVisit);
-    setSleepwalkerVisit(null);
+    // The night's protections / visits lapse; remember them so they can't repeat.
+    setLastProtectedBy(protectedBy);
+    setProtectedBy({});
+    setLastVisits(visits);
+    setVisits({});
     setSeerViews([]);
     setNightLog([]);
     setActorPick(null);
@@ -1234,12 +1384,12 @@ export default function NightPhase({
       const nextRound = round + 1;
       setPhase("night");
       setRound(nextRound);
-      // Last night's Raven curse lapses as the new night begins.
-      setRavenCursed(null);
+      // Last night's Raven curses lapse as the new night begins.
+      setRavenCursed([]);
       // A fresh night: reset the Rooster's tally of what the wolves get up to.
       setWolfSorcery(false);
       setWolfKillCount(0);
-      const q = wakeRolesFor(nextRound);
+      const q = wakeTurnsFor(nextRound);
       setWakeQueue(q);
       setView(q.length ? "wake" : "select");
     }
@@ -1261,25 +1411,53 @@ export default function NightPhase({
 
   /** Cupid binds the two chosen players, then the sequence moves on. */
   const confirmCupid = () => {
-    setLovers([...wakePicks]);
+    // One pair per Cupid — a Doppelgänger who copied Cupid fires their own arrow.
+    setLoverPairs((ps) => [...ps, [...wakePicks]]);
     logNight(`Cupid's arrow bound ${wakePicks.join(" and ")} as lovers.`);
     advanceWake();
   };
 
-  /** Wild Child locks in their role model, then the sequence moves on. */
+  /** Wild Child locks in their own role model, then the sequence moves on. */
   const confirmWildChild = () => {
-    if (wakePick) {
-      setRoleModel(wakePick);
+    const child = wakeQueue[0]?.player;
+    if (wakePick && child) {
+      setRoleModels((m) => ({ ...m, [child]: wakePick }));
       logNight(`The Wild Child took ${wakePick} as their role model.`);
     }
     advanceWake();
   };
 
-  /** Vile Doppelgänger secretly copies a player's role, then moves on. */
+  /**
+   * Vile Doppelgänger truly takes on the copied role — card, powers and all — and
+   * is owed their own turn at it. If that role's slot has already gone by (only
+   * the Sleepwalker at 5 and the Thief at 10 wake before him) they use it right
+   * now; otherwise their turn slots in after the player who was dealt the role.
+   */
   const confirmDoppelganger = (doppel: string, target: string) => {
-    setRoleOverride((o) => ({ ...o, [doppel]: roleOf(target) }));
+    const copied = roleOf(target);
+    setRoleOverride((o) => ({ ...o, [doppel]: copied }));
     logNight(`The Vile Doppelgänger stole ${target}'s face — the ${roleName(target)}.`);
-    advanceWake();
+
+    const c = byId(copied);
+    const rest = wakeQueue.slice(1);
+    if (!c || c.nightOrder === null || !IMPLEMENTED_WAKE.has(copied) || GROUP_WAKE.has(copied)) {
+      advanceWakeTo(rest); // passive, group or interlude power — nothing to queue
+      return;
+    }
+    const turn: WakeTurn = { role: copied, player: doppel };
+    const mine = byId("vile-doppelganger")?.nightOrder ?? 15;
+    if (c.nightOrder < mine) {
+      advanceWakeTo([turn, ...rest]); // their slot has passed — take it immediately
+      return;
+    }
+    // Otherwise fall in behind whoever else holds that role tonight.
+    const after = rest.map((t) => t.role).lastIndexOf(copied);
+    if (after >= 0) {
+      advanceWakeTo([...rest.slice(0, after + 1), turn, ...rest.slice(after + 1)]);
+      return;
+    }
+    const at = rest.findIndex((t) => (byId(t.role)?.nightOrder ?? 0) > (c.nightOrder ?? 0));
+    advanceWakeTo(at < 0 ? [...rest, turn] : [...rest.slice(0, at), turn, ...rest.slice(at)]);
   };
 
   /** Thief swaps their card for one of the two middle cards, then moves on. */
@@ -1310,10 +1488,11 @@ export default function NightPhase({
     advanceWake();
   };
 
-  /** Defender shields their chosen charge for the night, then moves on. */
+  /** This Defender shields their own charge for the night, then moves on. */
   const confirmDefend = () => {
-    if (wakePick) {
-      setProtectedPlayer(wakePick);
+    const guard = wakeQueue[0]?.player;
+    if (wakePick && guard) {
+      setProtectedBy((m) => ({ ...m, [guard]: wakePick }));
       logNight(`The Defender kept watch over ${wakePick}'s door.`);
     }
     advanceWake();
@@ -1325,9 +1504,10 @@ export default function NightPhase({
     advanceWake();
   };
 
-  /** Sleepwalker locks in tonight's visit, then moves on. */
+  /** This Sleepwalker locks in her own visit for tonight, then moves on. */
   const confirmVisit = () => {
-    if (wakePick) setSleepwalkerVisit(wakePick);
+    const walker = wakeQueue[0]?.player;
+    if (wakePick && walker) setVisits((m) => ({ ...m, [walker]: wakePick }));
     advanceWake();
   };
 
@@ -1344,10 +1524,9 @@ export default function NightPhase({
    * power for every living Fox, so they wake no more. A hit keeps it.
    */
   const confirmFox = (anyWolf: boolean) => {
-    if (!anyWolf) {
-      const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === "fox");
-      setFoxDone((d) => [...d, ...holders.filter((p) => !d.includes(p))]);
-    }
+    const fox = wakeQueue[0]?.player;
+    // Only THIS Fox's nose fails — another holder keeps their own sniff.
+    if (!anyWolf && fox) setFoxDone((d) => (d.includes(fox) ? d : [...d, fox]));
     logNight(
       anyWolf
         ? `The Fox sniffed at ${wakePicks.join(", ")} and caught the scent of wolf.`
@@ -1356,10 +1535,12 @@ export default function NightPhase({
     advanceWake();
   };
 
-  /** Raven curses tonight's target — two extra votes fall on them come day. */
+  /** This Raven curses a target — two extra votes fall on them come day. */
   const confirmRaven = () => {
-    setRavenCursed(wakePick);
-    logNight(`The Raven's omen settled on ${wakePick} — two extra votes at the trial.`);
+    if (wakePick) {
+      setRavenCursed((c) => (c.includes(wakePick) ? c : [...c, wakePick]));
+      logNight(`The Raven's omen settled on ${wakePick} — two extra votes at the trial.`);
+    }
     advanceWake();
   };
 
@@ -1395,11 +1576,14 @@ export default function NightPhase({
   const judgeAvailable =
     !isNight &&
     !powersDisabled &&
-    !judgeUsed &&
-    players.some((p) => !dead.includes(p) && roleOf(p) === "stuttering-judge");
+    // Each Judge holds their own second vote, so a copy still has one in hand.
+    players.some(
+      (p) => !dead.includes(p) && roleOf(p) === "stuttering-judge" && !judgeUsed.includes(p),
+    );
   const secondVote = () => {
     pushHistory();
-    setJudgeUsed(true);
+    const judge = orderedHolders("stuttering-judge").find((p) => !judgeUsed.includes(p));
+    if (judge) setJudgeUsed((u) => [...u, judge]);
     setPending([]);
     setView("select"); // stay on the same day, run another vote
   };
@@ -1955,9 +2139,11 @@ export default function NightPhase({
 
   /* ---------------------------- Wake sequence ---------------------------- */
   if (view === "wake" && wakeQueue.length) {
-    const roleId = wakeQueue[0];
+    // One turn = one holder. `holders` is that single player, except for the group
+    // roles (the Sisters, the Brothers) who wake as a set.
+    const { role: roleId, player: turnPlayer } = wakeQueue[0];
     const role = byId(roleId);
-    const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === roleId);
+    const holders = GROUP_WAKE.has(roleId) ? orderedHolders(roleId) : [turnPlayer];
     const holderLabel = holders.join(" & ");
     const pickBtn = (t: string) =>
       `rounded-full border px-3 py-1.5 text-sm ${
@@ -1969,7 +2155,7 @@ export default function NightPhase({
     // Sleepwalker — visits a living player (not herself, not last night's house).
     if (roleId === "sleepwalker") {
       const targets = players.filter(
-        (p) => !dead.includes(p) && !holders.includes(p) && p !== lastVisit,
+        (p) => !dead.includes(p) && !holders.includes(p) && p !== lastVisits[turnPlayer],
       );
       return (
         <div className="flex flex-col items-center gap-4 py-2 text-center">
@@ -2003,7 +2189,7 @@ export default function NightPhase({
 
     // Defender — shields one living player (may be self) from the wolves only.
     if (roleId === "defender") {
-      const targets = players.filter((p) => !dead.includes(p) && p !== lastProtected);
+      const targets = players.filter((p) => !dead.includes(p) && p !== lastProtectedBy[turnPlayer]);
       return (
         <div className="flex flex-col items-center gap-4 py-2 text-center">
           <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
@@ -2780,9 +2966,10 @@ export default function NightPhase({
           The Accursed Wolf-Father stirs
         </h1>
         <p className="max-w-sm text-sm text-moss-200">
-          Once per game, rather than let the pack's victim die, he may turn one into a new
-          werewolf. They keep their own card and every power that goes with it, but hunt with the
-          pack from now on — and the Seer will read them as a Werewolf.
+          Wake <span className="text-moon-100">{wolfFatherQueue[0]}</span>. Once per game, rather
+          than let the pack's victim die, they may turn one into a new werewolf. The convert keeps
+          their own card and every power that goes with it, but hunts with the pack from now on —
+          and the Seer will read them as a Werewolf.
         </p>
         {referenceButtons}
         <div className="flex flex-wrap justify-center gap-2">
@@ -2825,16 +3012,19 @@ export default function NightPhase({
 
   /* -------------------- The White Werewolf's betrayal --------------------- */
   if (view === "whiteWolf") {
-    const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === "white-werewolf");
-    const prey = players.filter((p) => !dead.includes(p) && !holders.includes(p) && readsAsWolf(p));
+    // Whichever white wolf is taking their turn; they never eat their own kind's copy.
+    const wolf = whiteWolfQueue[0];
+    const prey = players.filter(
+      (p) => !dead.includes(p) && roleOf(p) !== "white-werewolf" && readsAsWolf(p),
+    );
     return (
       <div className="flex flex-col items-center gap-4 py-2 text-center">
         <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
           The White Werewolf wakes
         </h1>
         <p className="max-w-sm text-sm text-moss-200">
-          Wake <span className="text-moon-100">{holders.join(" & ")}</span>. Once every two nights
-          they may turn on their own — choose a fellow wolf to devour, or spare them tonight.
+          Wake <span className="text-moon-100">{wolf}</span>. Once every two nights they may turn
+          on their own — choose a fellow wolf to devour, or spare them tonight.
         </p>
         {referenceButtons}
         <div className="flex flex-wrap justify-center gap-2">
@@ -2857,8 +3047,12 @@ export default function NightPhase({
           <button
             className="btn-lantern flex-1 px-4 py-3"
             onClick={() => {
+              // This white wolf spares the pack; hand on to the next, or the Witch.
+              const rest = whiteWolfQueue.slice(1);
+              setWhiteWolfQueue(rest);
               setWakePick(null);
-              toWitch(undefined, null);
+              if (rest.length) pushHistory();
+              else toWitch(witchQueue, undefined, whiteWolfKill);
             }}
           >
             Spare them
@@ -2879,10 +3073,13 @@ export default function NightPhase({
 
   /* ----------------------------- Witch potions --------------------------- */
   if (view === "witch") {
+    // Whichever witch is taking her turn — each holds her OWN pair of potions, so
+    // a Doppelgänger who copied the Witch still has a full set after the original.
+    const witch = witchQueue[0];
     const victims = pending;
     const poisonPool = players.filter((p) => !dead.includes(p));
-    const canHeal = !witchHealUsed;
-    const canPoison = !witchPoisonUsed;
+    const canHeal = !witchHealUsed.includes(witch);
+    const canPoison = !witchPoisonUsed.includes(witch);
     return (
       <div className="flex flex-col gap-4">
         <div className="text-center">
@@ -2890,8 +3087,9 @@ export default function NightPhase({
             The Witch wakes
           </h1>
           <p className="mx-auto max-w-sm text-sm text-moss-200">
-            Wake the Witch and show her the night's victim. She may spend her healing brew, her
-            poison — both, or neither.
+            Wake <span className="text-moon-100">{witch}</span> and show them the night's victim.
+            They may spend their healing brew, their poison — both, or neither.
+            {witchQueue.length > 1 && " Another Witch answers after this one."}
           </p>
           <div className="mt-3">{referenceButtons}</div>
         </div>
@@ -2931,10 +3129,11 @@ export default function NightPhase({
                 ? `She revives ${witchHeal} with the life potion.`
                 : "Tap a victim to revive them — the healing potion works only once."}
           </p>
-          {wolfFatherTarget && victims.includes(wolfFatherTarget) && (
+          {wolfFatherTarget.filter((b) => victims.includes(b)).length > 0 && (
             <p className="mt-1 text-center text-xs text-blood-300 italic">
-              For your eyes only: the Wolf-Father bit {wolfFatherTarget}. Healing them purges the
-              bite and wastes his power; leave them and they rise as a werewolf.
+              For your eyes only: the Wolf-Father bit{" "}
+              {wolfFatherTarget.filter((b) => victims.includes(b)).join(" & ")}. Healing them purges
+              the bite and wastes his power; leave them and they rise as a werewolf.
             </p>
           )}
         </div>
@@ -3034,8 +3233,8 @@ export default function NightPhase({
           selected={pending}
           soaked={soaked}
           charmed={charmed}
-          defended={protectedPlayer ? [protectedPlayer] : []}
-          cursed={phase === "day" && ravenCursed ? [ravenCursed] : []}
+          defended={Object.values(protectedBy)}
+          cursed={phase === "day" ? ravenCursed : []}
           onToggle={toggle}
           centerLabel={label}
         />
