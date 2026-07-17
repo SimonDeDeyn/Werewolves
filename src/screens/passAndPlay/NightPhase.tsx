@@ -8,7 +8,21 @@ import NoticeBoard, { type BoardItem } from "./NoticeBoard";
 import GameCard from "../../components/GameCard";
 
 type Phase = "night" | "day";
-type View = "wake" | "select" | "witch" | "hunter" | "transition" | "board";
+/**
+ * Screens of the loop. After the pack names its victim on "select", the night's
+ * wolf interludes run in the real wake order — the Wolf-Father's bite (105), the
+ * White Werewolf's betrayal (120), then the Witch's potions (140) — before the
+ * deaths are resolved.
+ */
+type View =
+  | "wake"
+  | "select"
+  | "wolfFather"
+  | "whiteWolf"
+  | "witch"
+  | "hunter"
+  | "transition"
+  | "board";
 
 /**
  * Roles with an implemented night wake-up step. When a night begins the app
@@ -29,7 +43,6 @@ const IMPLEMENTED_WAKE = new Set<string>([
   "two-sisters",
   "three-brothers",
   "wild-child",
-  "white-werewolf",
   "pyromaniac",
   "piper",
 ]);
@@ -78,7 +91,6 @@ interface Resolution {
   usedServants: string[]; // servant holders (players) who have already intervened this round
   huntersFired: string[]; // Hunters who have already taken their shot
   servantsDone: boolean; // the intervene hub has been dismissed
-  wolfFatherDone: boolean; // the Accursed Wolf-Father's convert prompt is resolved
   notes: string[]; // moderator-facing footnotes about spares, survivals, etc.
 }
 
@@ -241,9 +253,11 @@ export interface Snapshot {
   ravenCursed: string | null;
   packEnraged: boolean;
   whiteWolfKill: string | null;
+  wolfFatherTarget: string | null;
   angelWon: boolean;
   wolfSorcery: boolean;
   wolfKillCount: number;
+  nightLog: string[];
 }
 
 /**
@@ -259,7 +273,9 @@ export default function NightPhase({
   actorCards = [],
   resume,
   onExit,
-  onPlayAgain,
+  onSameVillage,
+  onNewVillage,
+  onRedeal,
 }: {
   assignments: Assignment[];
   board: Assignment[];
@@ -267,8 +283,14 @@ export default function NightPhase({
   actorCards?: string[];
   /** A saved Snapshot to restore into on mount (resuming an interrupted game). */
   resume?: Snapshot;
+  /** Quit to the main menu. */
   onExit: () => void;
-  onPlayAgain: () => void;
+  /** Abandon this game, keep the players, and rebuild the cast. */
+  onSameVillage: () => void;
+  /** Abandon this game and start again from the player names. */
+  onNewVillage: () => void;
+  /** Keep the same cast, but shuffle and deal the roles afresh. */
+  onRedeal: () => void;
 }) {
   const players = useMemo(() => assignments.map((a) => a.player), [assignments]);
   const baseRole = useMemo(
@@ -278,11 +300,7 @@ export default function NightPhase({
 
   // Night-1 wake queue (roles that wake, are in play, and are implemented).
   const initialWakeQueue = NIGHT_SEQUENCE.filter(
-    (c) =>
-      IMPLEMENTED_WAKE.has(c.id) &&
-      // The White Werewolf hunts only on even nights, so never on night one.
-      c.id !== "white-werewolf" &&
-      players.some((p) => baseRole[p] === c.id),
+    (c) => IMPLEMENTED_WAKE.has(c.id) && players.some((p) => baseRole[p] === c.id),
   ).map((c) => c.id);
 
   const [dead, setDead] = useState<string[]>([]);
@@ -315,6 +333,11 @@ export default function NightPhase({
   // Players the Seer glimpsed this night, so the scroll can recount it. Cleared
   // when the night ends.
   const [seerViews, setSeerViews] = useState<string[]>([]);
+  // Moderator-facing account of what each waking role actually did this night, so
+  // the scroll can recount powers that leave no trace in the death toll (the
+  // Defender's shield, the Fox's sniff, the Raven's omen…). Cleared at daybreak.
+  const [nightLog, setNightLog] = useState<string[]>([]);
+  const logNight = (line: string) => setNightLog((l) => [...l, line]);
   // Fox holders who have spent their power (a sniff that turned up no wolves).
   const [foxDone, setFoxDone] = useState<string[]>([]);
   // The Raven's cursed player: carries two extra guilty votes into the coming
@@ -325,6 +348,10 @@ export default function NightPhase({
   // The fellow wolf the White Werewolf marks on their off-night kill (folds into
   // the night's deaths, then clears).
   const [whiteWolfKill, setWhiteWolfKill] = useState<string | null>(null);
+  // Who the Accursed Wolf-Father bit tonight. The bite only takes hold at dawn:
+  // if anything pulls them out of death first (the Witch's brew, the Defender's
+  // shield) the convert simply lives on and his one-shot power is wasted.
+  const [wolfFatherTarget, setWolfFatherTarget] = useState<string | null>(null);
   // The Angel achieved their wish — eliminated on the very first day or night.
   const [angelWon, setAngelWon] = useState(false);
   // What the wolves did this night, so the Rooster can crow a fitting (but still
@@ -378,6 +405,16 @@ export default function NightPhase({
   // are ephemeral view state (reset each board), so they stay out of the Snapshot.
   const [scrollOpen, setScrollOpen] = useState(false);
   const [announced, setAnnounced] = useState<number[]>([]);
+  // The in-game hamburger menu, its confirmation prompt for the destructive
+  // options, and the "revisit your cards" pass-around. All pure view state: the
+  // revisit is an overlay rather than a `view`, so it never disturbs the game.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ text: string; onYes: () => void } | null>(
+    null,
+  );
+  const [revisitOpen, setRevisitOpen] = useState(false);
+  const [revisitPlayer, setRevisitPlayer] = useState<string | null>(null);
+  const [revisitShown, setRevisitShown] = useState(false);
 
   const [res, setRes] = useState<Resolution | null>(null);
   const [resPick, setResPick] = useState<string | null>(null);
@@ -444,9 +481,11 @@ export default function NightPhase({
     ravenCursed,
     packEnraged,
     whiteWolfKill,
+    wolfFatherTarget,
     angelWon,
     wolfSorcery,
     wolfKillCount,
+    nightLog,
   });
   const pushHistory = () => setHistory((h) => [...h, snapshot()]);
   // Push every field of a Snapshot back into live state — shared by Undo (steps
@@ -499,9 +538,11 @@ export default function NightPhase({
     setRavenCursed(prev.ravenCursed);
     setPackEnraged(prev.packEnraged);
     setWhiteWolfKill(prev.whiteWolfKill);
+    setWolfFatherTarget(prev.wolfFatherTarget);
     setAngelWon(prev.angelWon);
     setWolfSorcery(prev.wolfSorcery);
     setWolfKillCount(prev.wolfKillCount);
+    setNightLog(prev.nightLog);
   };
   const undo = () => {
     if (!history.length) return;
@@ -516,10 +557,15 @@ export default function NightPhase({
   const teamOf = (p: string) =>
     turnedWolves.includes(p) ? "werewolf" : byId(roleOf(p))?.team;
 
-  // How a player reads to inspection powers. The Traitor sides with the wolves
-  // but has no fangs — to the Seer and every other observer they are an ordinary
-  // Villager, so role-inspection shows a Villager card and the Fox smells nothing.
-  const observedRole = (p: string) => (roleOf(p) === "traitor" ? "villager" : roleOf(p));
+  // How a player reads to inspection powers.
+  //  - Anyone who has actually become a wolf (the Wolf-Father's convert, a turned
+  //    Wild Child) reads as a plain Werewolf, whatever card they still hold.
+  //  - The Traitor sides with the wolves but has no fangs, so they read as an
+  //    ordinary Villager and the Fox smells nothing on them.
+  const observedRole = (p: string) =>
+    turnedWolves.includes(p) ? "werewolf" : roleOf(p) === "traitor" ? "villager" : roleOf(p);
+  /** The role name an inspection actually revealed — the disguise, not the truth. */
+  const observedName = (p: string) => byId(observedRole(p))?.name ?? "?";
   const readsAsWolf = (p: string) => teamOf(p) === "werewolf" && roleOf(p) !== "traitor";
 
   // How many victims the wolves may take tonight: one, plus the Big Bad Wolf's
@@ -647,29 +693,9 @@ export default function NightPhase({
     return null;
   };
 
-  type Prompt =
-    | { kind: "servantHub" }
-    | { kind: "hunter"; player: string }
-    | { kind: "wolfFather" };
-
-  /** The living, not-dying holder of the Accursed Wolf-Father, if any. */
-  const wolfFatherHolder = (r: Resolution) =>
-    players.find(
-      (p) => roleOf(p) === "accursed-wolf-father" && !dead.includes(p) && !r.deaths.includes(p),
-    ) ?? null;
+  type Prompt = { kind: "servantHub" } | { kind: "hunter"; player: string };
 
   const nextPrompt = (r: Resolution): Prompt | null => {
-    // Accursed Wolf-Father (a wolf power, so unaffected by the Elder's death)
-    // may convert a villager the wolves slew into a new wolf, before anything else.
-    if (
-      r.phase === "night" &&
-      !r.wolfFatherDone &&
-      !wolfFatherUsed &&
-      wolfFatherHolder(r) &&
-      r.deaths.some((p) => teamOf(p) === "village")
-    ) {
-      return { kind: "wolfFather" };
-    }
     // Once the Elder falls to the village, every villager power is gone.
     if (powersDisabled) return null;
     // Servants only step in after a village vote, before the condemned are revealed.
@@ -765,8 +791,21 @@ export default function NightPhase({
     }
   };
 
-  const record = (witch?: { heal: string | null; poison: string | null }) => {
+  /**
+   * Resolve the phase's deaths. Choices made during the post-kill interludes are
+   * passed in rather than read from state, because a step that falls straight
+   * through to record() in the same event hasn't had its setState applied yet.
+   * An omitted field means "nothing fresh — use what's already in state".
+   */
+  const record = (opts?: {
+    witch?: { heal: string | null; poison: string | null };
+    fatherTarget?: string | null;
+    whiteKill?: string | null;
+  }) => {
     pushHistory();
+    const witch = opts?.witch;
+    const father = opts?.fatherTarget !== undefined ? opts.fatherTarget : wolfFatherTarget;
+    const white = opts?.whiteKill !== undefined ? opts.whiteKill : whiteWolfKill;
     const raw = pending;
     setPending([]);
     // Remember who was marked this phase (wolves' victims / the condemned) so the
@@ -824,6 +863,28 @@ export default function NightPhase({
         );
       }
 
+      // The Accursed Wolf-Father's bite. It only takes hold on a victim the wolves
+      // actually killed: anything that pulled them out of death first (the Witch's
+      // brew, the Defender's shield, the Elder's hide) purges the bite and wastes
+      // his one-shot power. A convert keeps their own card and every power that
+      // goes with it — only their allegiance changes, so turnedWolves is enough.
+      if (father) {
+        if (deaths.includes(father)) {
+          deaths = deaths.filter((p) => p !== father);
+          setTurnedWolves((w) => [...w, father]);
+          notes.push(
+            `The Accursed Wolf-Father's bite turns ${father} into a werewolf — they keep the ${roleName(
+              father,
+            )}'s powers but now hunt with the pack.`,
+          );
+        } else {
+          notes.push(
+            `${father} was pulled from death before the Wolf-Father's bite took hold — his power is wasted.`,
+          );
+        }
+        setWolfFatherTarget(null);
+      }
+
       // A Rusty Sword Knight slain by the wolves infects the wolf to their left.
       if (!powersDisabled) {
         const knight = deaths.find((p) => roleOf(p) === "rusty-sword-knight");
@@ -863,9 +924,9 @@ export default function NightPhase({
 
       // The White Werewolf's private kill of a fellow wolf lands now — a guaranteed
       // strike its victim can't be shielded from.
-      if (whiteWolfKill && !dead.includes(whiteWolfKill) && !deaths.includes(whiteWolfKill)) {
-        deaths = [...deaths, whiteWolfKill];
-        notes.push(`The White Werewolf turned on ${whiteWolfKill} — devoured by its own kind.`);
+      if (white && !dead.includes(white) && !deaths.includes(white)) {
+        deaths = [...deaths, white];
+        notes.push(`The White Werewolf turned on ${white} — devoured by its own kind.`);
       }
       if (whiteWolfKill) setWhiteWolfKill(null);
 
@@ -911,17 +972,69 @@ export default function NightPhase({
       usedServants: [],
       huntersFired: [],
       servantsDone: false,
-      wolfFatherDone: false,
       notes,
     });
   };
 
-  /**
-   * From the kill screen: at night, if a living Witch still holds a potion, she
-   * wakes to answer the wolves' strike before the deaths are resolved. Otherwise
-   * (or by day) go straight to resolution.
+  /* ---------------------- Post-kill night interludes --------------------- */
+  /*
+   * Once the pack names its victim, the night's remaining powers answer it in the
+   * real wake order: the Wolf-Father's bite (105), the White Werewolf's betrayal
+   * (120), then the Witch's potions (140). Each `to…` step either shows its screen
+   * or hands straight on to the next; the last one resolves the deaths. A fresh
+   * choice is threaded along as an argument, since its setState hasn't landed yet.
    */
-  const beginKill = () => {
+
+  const beginKill = () => toWolfFather();
+
+  const toWolfFather = () => {
+    // A wolf power, so the Elder's death doesn't disable it. He can only bite
+    // someone the pack actually marked, and only a villager — never his own kind.
+    const ready =
+      !wolfFatherUsed &&
+      players.some((p) => roleOf(p) === "accursed-wolf-father" && !dead.includes(p));
+    if (isNight && ready && pending.some((p) => teamOf(p) === "village")) {
+      pushHistory();
+      setResPick(null);
+      setView("wolfFather");
+      return;
+    }
+    toWhiteWolf();
+  };
+
+  /** Wolf-Father bites a marked villager (or lets the kill stand), then moves on. */
+  const confirmWolfFather = (victim: string | null) => {
+    if (victim) {
+      setWolfFatherTarget(victim);
+      setWolfFatherUsed(true); // spent even if the bite is later purged
+      setWolfSorcery(true);
+    }
+    toWhiteWolf(victim);
+  };
+
+  const toWhiteWolf = (fatherTarget?: string | null) => {
+    const holder = players.some((p) => roleOf(p) === "white-werewolf" && !dead.includes(p));
+    const prey = players.some(
+      (p) => !dead.includes(p) && roleOf(p) !== "white-werewolf" && readsAsWolf(p),
+    );
+    // Every other night only, and only while there's a packmate left to eat.
+    if (isNight && round % 2 === 0 && holder && prey) {
+      pushHistory();
+      setWakePick(null);
+      setView("whiteWolf");
+      return;
+    }
+    toWitch(fatherTarget);
+  };
+
+  /** White Werewolf marks a fellow wolf to devour (or spares them), then moves on. */
+  const confirmWhiteWolf = () => {
+    setWhiteWolfKill(wakePick);
+    if (wakePick) setWolfSorcery(true);
+    toWitch(undefined, wakePick);
+  };
+
+  const toWitch = (fatherTarget?: string | null, whiteKill?: string | null) => {
     if (isNight && !powersDisabled) {
       const witch = players.find((p) => roleOf(p) === "witch" && !dead.includes(p));
       if (witch && (!witchHealUsed || !witchPoisonUsed)) {
@@ -932,12 +1045,12 @@ export default function NightPhase({
         return;
       }
     }
-    record();
+    record({ fatherTarget, whiteKill });
   };
 
   /** Witch confirms her potions; the picks fold into the night's resolution. */
   const confirmWitch = () => {
-    record({ heal: witchHeal, poison: witchPoison });
+    record({ witch: { heal: witchHeal, poison: witchPoison } });
     setWitchHeal(null);
     setWitchPoison(null);
   };
@@ -1053,28 +1166,6 @@ export default function NightPhase({
     }
   };
 
-  /** Accursed Wolf-Father: convert a slain villager into a wolf, or let them die. */
-  const wolfFatherConvert = (victim: string | null) => {
-    if (!res) return;
-    pushHistory();
-    if (victim) {
-      setTurnedWolves((w) => [...w, victim]);
-      setWolfFatherUsed(true);
-      setWolfSorcery(true);
-      step({
-        ...res,
-        deaths: res.deaths.filter((p) => p !== victim),
-        wolfFatherDone: true,
-        notes: [
-          ...res.notes,
-          `The Accursed Wolf-Father's bite turns ${victim} into a new werewolf.`,
-        ],
-      });
-    } else {
-      step({ ...res, wolfFatherDone: true });
-    }
-  };
-
   const toggle = (name: string) =>
     setPending((p) =>
       p.includes(name)
@@ -1103,8 +1194,6 @@ export default function NightPhase({
             .filter((p) => !dead.includes(p) && roleOf(p) === "fox")
             .every((p) => foxDone.includes(p))
         ) &&
-        // The White Werewolf strikes only every other night (even nights).
-        !(c.id === "white-werewolf" && rnd % 2 !== 0) &&
         players.some((p) => !dead.includes(p) && roleOf(p) === c.id),
     ).map((c) => c.id);
 
@@ -1129,6 +1218,7 @@ export default function NightPhase({
     setLastVisit(sleepwalkerVisit);
     setSleepwalkerVisit(null);
     setSeerViews([]);
+    setNightLog([]);
     setActorPick(null);
   };
 
@@ -1172,48 +1262,60 @@ export default function NightPhase({
   /** Cupid binds the two chosen players, then the sequence moves on. */
   const confirmCupid = () => {
     setLovers([...wakePicks]);
+    logNight(`Cupid's arrow bound ${wakePicks.join(" and ")} as lovers.`);
     advanceWake();
   };
 
   /** Wild Child locks in their role model, then the sequence moves on. */
   const confirmWildChild = () => {
-    if (wakePick) setRoleModel(wakePick);
+    if (wakePick) {
+      setRoleModel(wakePick);
+      logNight(`The Wild Child took ${wakePick} as their role model.`);
+    }
     advanceWake();
   };
 
   /** Vile Doppelgänger secretly copies a player's role, then moves on. */
   const confirmDoppelganger = (doppel: string, target: string) => {
     setRoleOverride((o) => ({ ...o, [doppel]: roleOf(target) }));
+    logNight(`The Vile Doppelgänger stole ${target}'s face — the ${roleName(target)}.`);
     advanceWake();
   };
 
   /** Thief swaps their card for one of the two middle cards, then moves on. */
   const confirmThief = (thief: string, cardId: string) => {
     setRoleOverride((o) => ({ ...o, [thief]: cardId }));
+    logNight(`The Thief traded their card for the ${byId(cardId)?.name ?? "?"}.`);
     advanceWake();
   };
 
   /** Pyromaniac douses the picked houses in oil, then moves on. */
   const confirmSoak = () => {
     setSoaked((s) => [...s, ...wakePicks]);
+    logNight(`The Pyromaniac doused ${wakePicks.join(" and ")} in oil.`);
     advanceWake();
   };
 
   /** Pyromaniac ignites — every living soaked house burns in this night's toll. */
   const confirmIgnite = () => {
     setPendingBurn(soaked.filter((p) => !dead.includes(p)));
+    logNight("The Pyromaniac struck a match — every soaked house went up at once.");
     advanceWake();
   };
 
   /** Piper charms the picked players, then moves on. */
   const confirmCharm = () => {
     setCharmed((c) => [...c, ...wakePicks]);
+    logNight(`The Piper's tune charmed ${wakePicks.join(" and ")}.`);
     advanceWake();
   };
 
   /** Defender shields their chosen charge for the night, then moves on. */
   const confirmDefend = () => {
-    if (wakePick) setProtectedPlayer(wakePick);
+    if (wakePick) {
+      setProtectedPlayer(wakePick);
+      logNight(`The Defender kept watch over ${wakePick}'s door.`);
+    }
     advanceWake();
   };
 
@@ -1229,6 +1331,14 @@ export default function NightPhase({
     advanceWake();
   };
 
+  /** The Gypsy's yes/no question is answered; log who she asked about, then move on. */
+  const confirmGypsy = () => {
+    if (wakePick) {
+      logNight(`The Gypsy asked after ${wakePick} — you saw the ${observedName(wakePick)}.`);
+    }
+    advanceWake();
+  };
+
   /**
    * Fox's sniff is resolved. A miss (no wolves among the three) spends the
    * power for every living Fox, so they wake no more. A hit keeps it.
@@ -1238,19 +1348,18 @@ export default function NightPhase({
       const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === "fox");
       setFoxDone((d) => [...d, ...holders.filter((p) => !d.includes(p))]);
     }
+    logNight(
+      anyWolf
+        ? `The Fox sniffed at ${wakePicks.join(", ")} and caught the scent of wolf.`
+        : `The Fox sniffed at ${wakePicks.join(", ")} and found nothing — the power is spent.`,
+    );
     advanceWake();
   };
 
   /** Raven curses tonight's target — two extra votes fall on them come day. */
   const confirmRaven = () => {
     setRavenCursed(wakePick);
-    advanceWake();
-  };
-
-  /** White Werewolf marks a fellow wolf to devour tonight, then moves on. */
-  const confirmWhiteWolf = () => {
-    setWhiteWolfKill(wakePick);
-    if (wakePick) setWolfSorcery(true);
+    logNight(`The Raven's omen settled on ${wakePick} — two extra votes at the trial.`);
     advanceWake();
   };
 
@@ -1263,6 +1372,7 @@ export default function NightPhase({
     pushHistory();
     setActorPick(idx);
     setActorUsedIdx((u) => [...u, idx]);
+    logNight(`The Actor took up the ${byId(actorCards[idx])?.name ?? "?"}'s mask for the night.`);
   };
 
   const isNight = phase === "night";
@@ -1314,6 +1424,14 @@ export default function NightPhase({
         className="rounded-full border border-pine-600 px-3 py-1 text-xs text-moss-300 hover:border-moss-400 hover:text-moon-100"
       >
         ☰ Roster
+      </button>
+      <button
+        type="button"
+        onClick={() => setMenuOpen(true)}
+        aria-label="Game menu"
+        className="rounded-full border border-pine-600 px-3 py-1 text-xs text-moss-300 hover:border-moss-400 hover:text-moon-100"
+      >
+        ≡ Menu
       </button>
     </div>
   );
@@ -1447,6 +1565,199 @@ export default function NightPhase({
     </div>
   ) : null;
 
+  /* ------------------------------ Game menu ------------------------------ */
+  // The three ways to start afresh. Each abandons the running game, so they ask
+  // first; shared by the in-game hamburger and the end-of-game board.
+  const restartOptions: { label: string; desc: string; run: () => void }[] = [
+    {
+      label: "Start over with the same village",
+      desc: "Keep everyone at the table and pick the cast again.",
+      run: onSameVillage,
+    },
+    {
+      label: "Start over with another village",
+      desc: "Back to the player names to set up a different table.",
+      run: onNewVillage,
+    },
+    {
+      label: "Re-deal the roles",
+      desc: "Same cast, shuffled and handed out afresh.",
+      run: onRedeal,
+    },
+  ];
+
+  const askThen = (label: string, run: () => void) => {
+    setMenuOpen(false);
+    setConfirmAction({ text: `${label}? The game in progress will be lost.`, onYes: run });
+  };
+
+  const openRevisit = () => {
+    setMenuOpen(false);
+    setRevisitPlayer(null);
+    setRevisitShown(false);
+    setRevisitOpen(true);
+  };
+
+  const menuOverlay = menuOpen ? (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={() => setMenuOpen(false)}
+    >
+      <div className="panel w-full max-w-sm p-4" onClick={(e) => e.stopPropagation()}>
+        <p className="mb-3 text-center font-display text-xs tracking-[0.3em] text-moss-300 uppercase">
+          Menu
+        </p>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={openRevisit}
+            className="rounded-lg border border-moss-400/60 bg-night-800/60 p-3 text-left transition-colors hover:border-moss-400"
+          >
+            <p className="font-display text-sm text-moon-100">Revisit your cards</p>
+            <p className="mt-0.5 text-[0.7rem] text-moss-300">
+              Pass the phone round so anyone who forgot can peek again.
+            </p>
+          </button>
+          {restartOptions.map((o) => (
+            <button
+              key={o.label}
+              type="button"
+              onClick={() => askThen(o.label, o.run)}
+              className="rounded-lg border border-pine-600 bg-night-800/40 p-3 text-left transition-colors hover:border-moss-400"
+            >
+              <p className="font-display text-sm text-moon-100">{o.label}</p>
+              <p className="mt-0.5 text-[0.7rem] text-moss-300">{o.desc}</p>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="btn-lantern mt-3 w-full px-4 py-2"
+          onClick={() => setMenuOpen(false)}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  const confirmDialog = confirmAction ? (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6 backdrop-blur-sm"
+      onClick={() => setConfirmAction(null)}
+    >
+      <div className="panel max-w-xs p-5 text-center" onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm text-moon-100">{confirmAction.text}</p>
+        <div className="mt-4 flex gap-3">
+          <button className="btn-lantern flex-1 px-4 py-2.5" onClick={() => setConfirmAction(null)}>
+            Cancel
+          </button>
+          <button
+            className="btn-lantern flex-1 px-4 py-2.5"
+            onClick={() => {
+              const yes = confirmAction.onYes;
+              setConfirmAction(null);
+              yes();
+            }}
+          >
+            Yes
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  /* -------------------------- Revisit your cards ------------------------- */
+  // A pass-the-phone refresher for anyone who forgot their role. It shows the
+  // player's CURRENT card, so a Thief's swap or a Doppelgänger's copy reads true.
+  const revisitCard = revisitPlayer ? byId(roleOf(revisitPlayer)) : undefined;
+  const revisitOverlay = revisitOpen ? (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-night-950/95 p-4 backdrop-blur">
+      <div className="mx-auto flex min-h-[calc(100dvh-2rem)] max-w-sm flex-col items-center justify-center gap-5 text-center">
+        {!revisitPlayer ? (
+          <>
+            <h2 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+              Revisit your cards
+            </h2>
+            <p className="max-w-xs text-sm text-moss-200">Who needs to see their card again?</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {players
+                .filter((p) => !dead.includes(p))
+                .map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setRevisitPlayer(p);
+                      setRevisitShown(false);
+                    }}
+                    className="rounded-full border border-pine-600 px-3 py-1.5 text-sm text-moss-200 hover:border-moss-400 hover:text-moon-100"
+                  >
+                    {p}
+                  </button>
+                ))}
+            </div>
+            <button className="btn-lantern px-6 py-3 text-sm" onClick={() => setRevisitOpen(false)}>
+              ← Done looking
+            </button>
+          </>
+        ) : !revisitShown ? (
+          <>
+            <p className="text-sm tracking-[0.3em] text-moss-300 uppercase">Another look</p>
+            <div>
+              <p className="text-sm text-moss-200">Pass the phone to</p>
+              <h2 className="font-display text-4xl font-bold tracking-wider text-moon-100">
+                {revisitPlayer}
+              </h2>
+            </div>
+            <p className="max-w-xs text-xs text-moss-300 italic">
+              Make sure no one else can see the screen.
+            </p>
+            <button className="btn-lantern px-6 py-4 text-lg" onClick={() => setRevisitShown(true)}>
+              I'm {revisitPlayer} — show my card
+            </button>
+            <button
+              className="text-xs text-moss-300 underline-offset-2 hover:text-moon-200 hover:underline"
+              onClick={() => setRevisitPlayer(null)}
+            >
+              ← Someone else
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-moss-200">
+              <span className="text-moon-100">{revisitPlayer}</span>, here is your card
+            </p>
+            {revisitCard && (
+              <GameCard key={`revisit-${revisitPlayer}`} character={revisitCard} initialFlipped />
+            )}
+            {turnedWolves.includes(revisitPlayer) && (
+              <p className="max-w-xs text-xs text-blood-300 italic">
+                You keep this card and its powers — but you hunt with the wolves now.
+              </p>
+            )}
+            <button
+              className="btn-lantern px-6 py-3.5 text-lg"
+              onClick={() => setRevisitPlayer(null)}
+            >
+              Hide &amp; done
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  ) : null;
+
+  /** Every overlay that can float above the current screen. */
+  const overlays = (
+    <>
+      {referenceOverlay}
+      {menuOverlay}
+      {confirmDialog}
+      {revisitOverlay}
+    </>
+  );
+
   /* ----------------------------- Resolve view ---------------------------- */
   if (res) {
     // Devoted Servant's private reveal comes before the swap is finalised.
@@ -1522,50 +1833,6 @@ export default function NightPhase({
     }
 
     const prompt = nextPrompt(res)!;
-
-    if (prompt.kind === "wolfFather") {
-      const victims = res.deaths.filter((p) => teamOf(p) === "village");
-      return (
-        <div className="flex flex-col items-center gap-4 py-2 text-center">
-          <h1 className="font-display text-2xl font-bold tracking-wider text-blood-500">
-            The Accursed Wolf-Father stirs
-          </h1>
-          <p className="max-w-sm text-sm text-moss-200">
-            Once per game, instead of letting a villager the wolves slew die, the Wolf-Father may
-            turn one into a new werewolf. Choose whom, or let the kill stand.
-          </p>
-          <div className="flex flex-wrap justify-center gap-2">
-            {victims.map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setResPick(v)}
-                className={`rounded-full border px-3 py-1.5 text-sm ${
-                  resPick === v
-                    ? "border-blood-500 bg-blood-700/40 text-moon-100 ring-2 ring-blood-500"
-                    : "border-pine-600 text-moss-200 hover:border-moss-400"
-                }`}
-              >
-                {v} · {roleName(v)}
-              </button>
-            ))}
-          </div>
-          <div className="flex w-full max-w-sm gap-3">
-            <button className="btn-lantern flex-1 px-4 py-3" onClick={() => wolfFatherConvert(null)}>
-              Let them die
-            </button>
-            <button
-              className="btn-lantern flex-[2] px-4 py-3 text-lg"
-              disabled={!resPick}
-              onClick={() => wolfFatherConvert(resPick)}
-            >
-              {resPick ? `Turn ${resPick} into a wolf →` : "Choose a victim"}
-            </button>
-          </div>
-          {undoRow}
-        </div>
-      );
-    }
 
     if (prompt.kind === "servantHub") {
       const available = availableServants(res);
@@ -1718,7 +1985,7 @@ export default function NightPhase({
             {wakePick ? `Visit ${wakePick} →` : "Choose a house"}
           </button>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -1751,7 +2018,7 @@ export default function NightPhase({
             {wakePick ? `Shield ${wakePick} →` : "Choose whom to guard"}
           </button>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -1772,11 +2039,11 @@ export default function NightPhase({
               nod or a shake. Don't show her the card.
             </p>
             {seen && <GameCard character={seen} initialFlipped />}
-            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={advanceWake}>
+            <button className="btn-lantern px-6 py-3.5 text-lg" onClick={confirmGypsy}>
               Done →
             </button>
             {undoRow}
-            {referenceOverlay}
+            {overlays}
           </div>
         );
       }
@@ -1812,7 +2079,7 @@ export default function NightPhase({
             </button>
           </div>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -1840,7 +2107,7 @@ export default function NightPhase({
               Done →
             </button>
             {undoRow}
-            {referenceOverlay}
+            {overlays}
           </div>
         );
       }
@@ -1892,7 +2159,7 @@ export default function NightPhase({
             </button>
           </div>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -1931,7 +2198,7 @@ export default function NightPhase({
             </button>
           </div>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -1953,7 +2220,7 @@ export default function NightPhase({
             Continue →
           </button>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2014,7 +2281,7 @@ export default function NightPhase({
             </button>
           )}
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2055,7 +2322,7 @@ export default function NightPhase({
             Keep the Thief →
           </button>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2083,7 +2350,7 @@ export default function NightPhase({
               Become the {seen?.name} →
             </button>
             {undoRow}
-            {referenceOverlay}
+            {overlays}
           </div>
         );
       }
@@ -2126,7 +2393,7 @@ export default function NightPhase({
             </button>
           </div>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2178,7 +2445,7 @@ export default function NightPhase({
               : `Choose two lovers (${wakePicks.length}/2)`}
           </button>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2220,7 +2487,7 @@ export default function NightPhase({
             {wakePick ? `Set ${wakePick} as role model →` : "Choose a role model"}
           </button>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2242,7 +2509,7 @@ export default function NightPhase({
               Done →
             </button>
             {undoRow}
-            {referenceOverlay}
+            {overlays}
           </div>
         );
       }
@@ -2286,7 +2553,7 @@ export default function NightPhase({
             </button>
           </div>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2363,7 +2630,7 @@ export default function NightPhase({
             </button>
           </div>
           {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2425,49 +2692,7 @@ export default function NightPhase({
             </button>
           </div>
           {undoRow}
-          {referenceOverlay}
-        </div>
-      );
-    }
-
-    // White Werewolf — on even nights, may secretly devour a fellow wolf.
-    if (roleId === "white-werewolf") {
-      const prey = players.filter((p) => !dead.includes(p) && !holders.includes(p) && readsAsWolf(p));
-      return (
-        <div className="flex flex-col items-center gap-4 py-2 text-center">
-          <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
-            The White Werewolf wakes
-          </h1>
-          <p className="max-w-sm text-sm text-moss-200">
-            Wake <span className="text-moon-100">{holderLabel}</span>. Once every two nights they
-            may turn on their own — choose a fellow wolf to devour, or spare them tonight.
-          </p>
-          {referenceButtons}
-          {prey.length ? (
-            <div className="flex flex-wrap justify-center gap-2">
-              {prey.map((t) => (
-                <button key={t} type="button" onClick={() => setWakePick(t)} className={pickBtn(t)}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-moss-400 italic">No fellow wolves are left to devour.</p>
-          )}
-          <div className="flex w-full max-w-sm gap-3">
-            <button className="btn-lantern flex-1 px-4 py-3" onClick={advanceWake}>
-              Spare them
-            </button>
-            <button
-              className="btn-lantern flex-[2] px-4 py-3 text-lg"
-              disabled={!wakePick}
-              onClick={confirmWhiteWolf}
-            >
-              {wakePick ? `Devour ${wakePick} →` : "Choose a wolf"}
-            </button>
-          </div>
-          {undoRow}
-          {referenceOverlay}
+          {overlays}
         </div>
       );
     }
@@ -2530,7 +2755,113 @@ export default function NightPhase({
           </button>
         </div>
         {undoRow}
-        {referenceOverlay}
+        {overlays}
+      </div>
+    );
+  }
+
+  /* --------------------- The Accursed Wolf-Father's bite ------------------ */
+  if (view === "wolfFather") {
+    const victims = pending.filter((p) => teamOf(p) === "village");
+    return (
+      <div className="flex flex-col items-center gap-4 py-2 text-center">
+        <h1 className="font-display text-2xl font-bold tracking-wider text-blood-500">
+          The Accursed Wolf-Father stirs
+        </h1>
+        <p className="max-w-sm text-sm text-moss-200">
+          Once per game, rather than let the pack's victim die, he may turn one into a new
+          werewolf. They keep their own card and every power that goes with it, but hunt with the
+          pack from now on — and the Seer will read them as a Werewolf.
+        </p>
+        {referenceButtons}
+        <div className="flex flex-wrap justify-center gap-2">
+          {victims.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setResPick(v)}
+              className={`rounded-full border px-3 py-1.5 text-sm ${
+                resPick === v
+                  ? "border-blood-500 bg-blood-700/40 text-moon-100 ring-2 ring-blood-500"
+                  : "border-pine-600 text-moss-200 hover:border-moss-400"
+              }`}
+            >
+              {v} · {roleName(v)}
+            </button>
+          ))}
+        </div>
+        <p className="max-w-sm text-xs text-moss-400 italic">
+          The bite only takes hold at dawn — if the Witch heals them tonight, they live on as
+          themselves and this power is wasted.
+        </p>
+        <div className="flex w-full max-w-sm gap-3">
+          <button className="btn-lantern flex-1 px-4 py-3" onClick={() => confirmWolfFather(null)}>
+            Let them die
+          </button>
+          <button
+            className="btn-lantern flex-[2] px-4 py-3 text-lg"
+            disabled={!resPick}
+            onClick={() => confirmWolfFather(resPick)}
+          >
+            {resPick ? `Turn ${resPick} into a wolf →` : "Choose a victim"}
+          </button>
+        </div>
+        {undoRow}
+        {overlays}
+      </div>
+    );
+  }
+
+  /* -------------------- The White Werewolf's betrayal --------------------- */
+  if (view === "whiteWolf") {
+    const holders = players.filter((p) => !dead.includes(p) && roleOf(p) === "white-werewolf");
+    const prey = players.filter((p) => !dead.includes(p) && !holders.includes(p) && readsAsWolf(p));
+    return (
+      <div className="flex flex-col items-center gap-4 py-2 text-center">
+        <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+          The White Werewolf wakes
+        </h1>
+        <p className="max-w-sm text-sm text-moss-200">
+          Wake <span className="text-moon-100">{holders.join(" & ")}</span>. Once every two nights
+          they may turn on their own — choose a fellow wolf to devour, or spare them tonight.
+        </p>
+        {referenceButtons}
+        <div className="flex flex-wrap justify-center gap-2">
+          {prey.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setWakePick(t)}
+              className={`rounded-full border px-3 py-1.5 text-sm ${
+                wakePick === t
+                  ? "border-moon-200 bg-pine-500 text-moon-100 ring-2 ring-moss-400"
+                  : "border-pine-600 text-moss-200 hover:border-moss-400"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="flex w-full max-w-sm gap-3">
+          <button
+            className="btn-lantern flex-1 px-4 py-3"
+            onClick={() => {
+              setWakePick(null);
+              toWitch(undefined, null);
+            }}
+          >
+            Spare them
+          </button>
+          <button
+            className="btn-lantern flex-[2] px-4 py-3 text-lg"
+            disabled={!wakePick}
+            onClick={confirmWhiteWolf}
+          >
+            {wakePick ? `Devour ${wakePick} →` : "Choose a wolf"}
+          </button>
+        </div>
+        {undoRow}
+        {overlays}
       </div>
     );
   }
@@ -2589,6 +2920,12 @@ export default function NightPhase({
                 ? `She revives ${witchHeal} with the life potion.`
                 : "Tap a victim to revive them — the healing potion works only once."}
           </p>
+          {wolfFatherTarget && victims.includes(wolfFatherTarget) && (
+            <p className="mt-1 text-center text-xs text-blood-300 italic">
+              For your eyes only: the Wolf-Father bit {wolfFatherTarget}. Healing them purges the
+              bite and wastes his power; leave them and they rise as a werewolf.
+            </p>
+          )}
         </div>
 
         {/* Lower half — the poison potion kills anyone she names. */}
@@ -2631,7 +2968,7 @@ export default function NightPhase({
           {witchHeal || witchPoison ? "Seal her choices →" : "She stays her hand →"}
         </button>
         {undoRow}
-        {referenceOverlay}
+        {overlays}
       </div>
     );
   }
@@ -2694,7 +3031,7 @@ export default function NightPhase({
           </button>
         </div>
         {undoRow}
-        {referenceOverlay}
+        {overlays}
       </div>
     );
   }
@@ -2734,13 +3071,28 @@ export default function NightPhase({
       ? names.join("")
       : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 
-  // Everything the app knows happened this phase, for the scroll. Order: the
-  // attack, who fell (with their role), then the mechanical footnotes.
+  // The dawn omens — public signs the whole village witnesses, so they appear both
+  // as banners on the board and as lines in the scroll.
+  const growl = isNight && bearGrowls();
+  const crows = isNight && players.some((p) => roleOf(p) === "rooster" && !dead.includes(p));
+  const bearOmen = "The bear growled — a werewolf sits beside the Bear Tamer.";
+  const roosterOmen = wolfSorcery
+    ? "The rooster crows — a wolf's dark power stirred in the night."
+    : wolfKillCount > 1
+      ? "The rooster crows — the pack hunted more than once tonight."
+      : wolfKillCount >= 1
+        ? "The rooster crows — the werewolves hunted in the night."
+        : "The rooster crows — the wolves did not strike last night.";
+
+  // Everything the app knows happened this phase, for the scroll. Order retells the
+  // night as it played out: what each waking role did, the wolves' attack, who fell
+  // (with their role), the mechanical footnotes, then the omens the village wakes to.
   const scrollLines: string[] = [];
   if (isNight) {
     for (const p of seerViews) {
-      scrollLines.push(`The Seer read ${p}'s fate — the ${roleName(p)}.`);
+      scrollLines.push(`The Seer read ${p}'s fate — the ${observedName(p)}.`);
     }
+    for (const l of nightLog) scrollLines.push(l);
     scrollLines.push(
       lastAttacked.length
         ? `The werewolves set upon ${listNames(lastAttacked)}.`
@@ -2757,6 +3109,8 @@ export default function NightPhase({
     );
   }
   for (const n of lastNotes) scrollLines.push(n);
+  if (growl) scrollLines.push(bearOmen);
+  if (crows) scrollLines.push(roosterOmen);
 
   // From the aftermath board, step through the "village wakes / sleeps" screen
   // before the next phase actually begins.
@@ -2772,19 +3126,6 @@ export default function NightPhase({
   const pendingShot = isNight && pendingHunters.length > 0;
   const shownResult = pendingShot ? null : result;
 
-  // At dawn the Bear Tamer's bear growls if a wolf now sits beside its keeper.
-  const growl = isNight && bearGrowls();
-
-  // At dawn a living Rooster crows a fitting omen for what the wolves did — a
-  // hidden dark power, an unusually deep hunt, a plain kill, or nothing at all.
-  const crows = isNight && players.some((p) => roleOf(p) === "rooster" && !dead.includes(p));
-  const roosterCrow = wolfSorcery
-    ? "🐓 The rooster crows — a wolf's dark power stirred in the night."
-    : wolfKillCount > 1
-      ? "🐓 The rooster crows — the pack hunted more than once tonight."
-      : wolfKillCount >= 1
-        ? "🐓 The rooster crows — the werewolves hunted in the night."
-        : "🐓 The rooster crows — the wolves did not strike last night.";
 
   return (
     <div className="flex flex-col gap-4">
@@ -2816,15 +3157,13 @@ export default function NightPhase({
 
       {growl && (
         <div className="rounded-lg border border-bark-400 bg-bark-500/15 px-4 py-3 text-center">
-          <p className="font-display text-sm tracking-wide text-bark-200">
-            🐻 The bear growls — a werewolf sits beside the Bear Tamer.
-          </p>
+          <p className="font-display text-sm tracking-wide text-bark-200">🐻 {bearOmen}</p>
         </div>
       )}
 
       {crows && (
         <div className="rounded-lg border border-moon-400/40 bg-night-800/50 px-4 py-3 text-center">
-          <p className="font-display text-sm tracking-wide text-moon-200">{roosterCrow}</p>
+          <p className="font-display text-sm tracking-wide text-moon-200">🐓 {roosterOmen}</p>
         </div>
       )}
 
@@ -2877,29 +3216,36 @@ export default function NightPhase({
         </button>
       )}
 
-      <div className="flex gap-3">
-        {shownResult ? (
-          <>
-            <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
-              Main menu
+      {shownResult ? (
+        // The game is over, so nothing is left to lose — these run without asking.
+        <div className="flex flex-col gap-2">
+          {restartOptions.map((o) => (
+            <button
+              key={o.label}
+              type="button"
+              onClick={o.run}
+              className="rounded-lg border border-pine-600 bg-night-800/40 p-3 text-left transition-colors hover:border-moss-400"
+            >
+              <p className="font-display text-sm text-moon-100">{o.label}</p>
+              <p className="mt-0.5 text-[0.7rem] text-moss-300">{o.desc}</p>
             </button>
-            <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={onPlayAgain}>
-              Play again →
-            </button>
-          </>
-        ) : (
-          <>
-            <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
-              Quit
-            </button>
-            <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={advance}>
-              Continue →
-            </button>
-          </>
-        )}
-      </div>
+          ))}
+          <button className="btn-lantern mt-1 px-4 py-3" onClick={onExit}>
+            Quit to the main menu
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-3">
+          <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
+            Quit
+          </button>
+          <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={advance}>
+            Continue →
+          </button>
+        </div>
+      )}
       {undoRow}
-      {referenceOverlay}
+      {overlays}
     </div>
   );
 }

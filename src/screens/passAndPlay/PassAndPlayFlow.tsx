@@ -210,6 +210,17 @@ export default function PassAndPlayFlow({
     setStep("board");
   };
 
+  /**
+   * Abandon the running game and rewind to an earlier setup step — the cast
+   * (same village) or the player names (a new village). The draft is kept, so
+   * "same village" lands on role selection with everyone still listed.
+   */
+  const startOver = (step: Step) => {
+    clearGame();
+    setResumeState(undefined);
+    setStep(step);
+  };
+
   const moderatorName =
     draft.moderatorMode === "player" && draft.moderatorIndex !== null
       ? draft.players[draft.moderatorIndex]
@@ -288,7 +299,9 @@ export default function PassAndPlayFlow({
           actorCards={actorCards}
           resume={resumeState}
           onExit={onExit}
-          onPlayAgain={() => setStep("moderator")}
+          onSameVillage={() => startOver("roles")}
+          onNewVillage={() => startOver("names")}
+          onRedeal={deal}
         />
       )}
     </div>

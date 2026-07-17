@@ -336,11 +336,13 @@ export const CHARACTERS: Character[] = [
     id: "accursed-wolf-father",
     name: "Accursed Wolf-Father",
     team: "werewolf",
-    nightOrder: 130,
+    // Acts the instant the pack names its victim — before the Big Bad Wolf and
+    // the White Werewolf, and well before the Witch, who can still purge the bite.
+    nightOrder: 105,
     oncePerGame: true,
     description: "His bite does not always kill — sometimes it converts.",
     ability:
-      "Once per game, can turn the villager killed by the wolves into a new werewolf instead.",
+      "Once per game, can turn the villager killed by the wolves into a new werewolf instead. The convert keeps their own powers but wins with the wolves; a Witch's heal purges the bite and wastes the power.",
   },
   {
     id: "traitor",
