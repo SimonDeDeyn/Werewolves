@@ -2986,16 +2986,37 @@ export default function NightPhase({
 
   /* --------------------------- Selection screen -------------------------- */
   if (view === "select") {
+    // The pack that actually opens its eyes: true wolves plus anyone turned (a
+    // Wild Child who flipped, the Wolf-Father's convert). The Traitor sleeps
+    // through it, so readsAsWolf leaves them out.
+    const pack = players.filter((p) => !dead.includes(p) && readsAsWolf(p));
     return (
       <div className="flex flex-col items-center gap-4">
-        <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">{label}</h1>
+        <p className="font-display text-xs tracking-[0.4em] text-moss-300 uppercase">{label}</p>
+        <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+          {isNight
+            ? pack.length
+              ? "The wolves choose their victim"
+              : "No wolves stalk the village"
+            : "The village votes"}
+        </h1>
         {referenceButtons}
         <p className="max-w-sm text-center text-sm text-moss-200">
-          {isNight
-            ? nightKillCap > 1
-              ? `The werewolves stalk the village. Tap tonight's victims — up to ${nightKillCap}.`
-              : "The werewolves stalk the village. Tap tonight's victim."
-            : "The village gathers and votes. Tap who is sent to the gallows."}
+          {isNight ? (
+            pack.length ? (
+              <>
+                Wake <span className="text-moon-100">{pack.join(" & ")}</span>. They agree among
+                themselves —{" "}
+                {nightKillCap > 1
+                  ? `tap the ${nightKillCap} who fall.`
+                  : "tap tonight's victim."}
+              </>
+            ) : (
+              "Not a wolf is left to hunt — record no kill and let dawn come."
+            )
+          ) : (
+            "The village gathers and votes. Tap who is sent to the gallows."
+          )}
         </p>
         {isNight && nightKillCap > 1 && (
           <p className="-mt-2 max-w-sm text-center text-xs text-blood-300">
