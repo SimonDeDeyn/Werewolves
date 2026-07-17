@@ -82,6 +82,7 @@ export default function NewGameScreen({
               setActiveResume(undefined);
               setMode("menu");
             }}
+            onMainMenu={onBack}
           />
         </div>
       )}

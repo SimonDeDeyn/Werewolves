@@ -272,7 +272,7 @@ export default function NightPhase({
   middleCards = [],
   actorCards = [],
   resume,
-  onExit,
+  onMainMenu,
   onSameVillage,
   onNewVillage,
   onRedeal,
@@ -283,8 +283,8 @@ export default function NightPhase({
   actorCards?: string[];
   /** A saved Snapshot to restore into on mount (resuming an interrupted game). */
   resume?: Snapshot;
-  /** Quit to the main menu. */
-  onExit: () => void;
+  /** Leave for the app's home screen. The game is saved and can be resumed. */
+  onMainMenu: () => void;
   /** Abandon this game, keep the players, and rebuild the cast. */
   onSameVillage: () => void;
   /** Abandon this game and start again from the player names. */
@@ -1586,10 +1586,10 @@ export default function NightPhase({
     },
   ];
 
-  const askThen = (label: string, run: () => void) => {
-    setMenuOpen(false);
+  // The menu stays open underneath, so cancelling the prompt drops you back into
+  // it rather than out to the game screen.
+  const askThen = (label: string, run: () => void) =>
     setConfirmAction({ text: `${label}? The game in progress will be lost.`, onYes: run });
-  };
 
   const openRevisit = () => {
     setMenuOpen(false);
@@ -1629,6 +1629,17 @@ export default function NightPhase({
               <p className="mt-0.5 text-[0.7rem] text-moss-300">{o.desc}</p>
             </button>
           ))}
+          {/* Not destructive: the night is saved, so it can be picked up again. */}
+          <button
+            type="button"
+            onClick={onMainMenu}
+            className="rounded-lg border border-pine-600 bg-night-800/40 p-3 text-left transition-colors hover:border-moss-400"
+          >
+            <p className="font-display text-sm text-moon-100">Main menu</p>
+            <p className="mt-0.5 text-[0.7rem] text-moss-300">
+              Leave the game — it's saved, so you can resume it from the home screen.
+            </p>
+          </button>
         </div>
         <button
           type="button"
@@ -1643,7 +1654,7 @@ export default function NightPhase({
 
   const confirmDialog = confirmAction ? (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-6 backdrop-blur-sm"
       onClick={() => setConfirmAction(null)}
     >
       <div className="panel max-w-xs p-5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -3016,20 +3027,15 @@ export default function NightPhase({
               : "No one selected — tap the condemned, or continue with no vote"}
         </p>
 
-        <div className="flex w-full max-w-sm gap-3">
-          <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
-            Quit
-          </button>
-          <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={beginKill}>
-            {pending.length
-              ? isNight
-                ? "Record the kill →"
-                : "Record the vote →"
-              : isNight
-                ? "No death — dawn →"
-                : "No execution →"}
-          </button>
-        </div>
+        <button className="btn-lantern w-full max-w-sm px-4 py-3 text-lg" onClick={beginKill}>
+          {pending.length
+            ? isNight
+              ? "Record the kill →"
+              : "Record the vote →"
+            : isNight
+              ? "No death — dawn →"
+              : "No execution →"}
+        </button>
         {undoRow}
         {overlays}
       </div>
@@ -3230,19 +3236,14 @@ export default function NightPhase({
               <p className="mt-0.5 text-[0.7rem] text-moss-300">{o.desc}</p>
             </button>
           ))}
-          <button className="btn-lantern mt-1 px-4 py-3" onClick={onExit}>
+          <button className="btn-lantern mt-1 px-4 py-3" onClick={onMainMenu}>
             Quit to the main menu
           </button>
         </div>
       ) : (
-        <div className="flex gap-3">
-          <button className="btn-lantern flex-1 px-4 py-3" onClick={onExit}>
-            Quit
-          </button>
-          <button className="btn-lantern flex-[2] px-4 py-3 text-lg" onClick={advance}>
-            Continue →
-          </button>
-        </div>
+        <button className="btn-lantern w-full px-4 py-3 text-lg" onClick={advance}>
+          Continue →
+        </button>
       )}
       {undoRow}
       {overlays}

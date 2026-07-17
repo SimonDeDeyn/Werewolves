@@ -179,9 +179,12 @@ const STEP_TITLES: Record<Step, string> = {
 
 export default function PassAndPlayFlow({
   onExit,
+  onMainMenu,
   resume,
 }: {
   onExit: () => void;
+  /** Leave pass-and-play entirely, back to the app's home screen. */
+  onMainMenu: () => void;
   /** A saved game to jump straight back into, skipping setup. */
   resume?: SavedGame;
 }) {
@@ -298,7 +301,7 @@ export default function PassAndPlayFlow({
           middleCards={middleCards}
           actorCards={actorCards}
           resume={resumeState}
-          onExit={onExit}
+          onMainMenu={onMainMenu}
           onSameVillage={() => startOver("roles")}
           onNewVillage={() => startOver("names")}
           onRedeal={deal}
