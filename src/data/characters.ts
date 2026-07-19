@@ -31,6 +31,12 @@ export interface Character {
    * Defaults to 1 (an ordinary single-seat role).
    */
   groupSize?: number;
+  /**
+   * A title laid over a player rather than a card in the deck (the Sheriff): it
+   * is never dealt, never fills a seat, and counts as 0 in the cast tally. One
+   * player is appointed to it at the start of the game.
+   */
+  slotless?: boolean;
   /** Flavour text shown to players. */
   description: string;
   /** Short mechanical summary used by the narrator engine and compendium. */
@@ -47,6 +53,17 @@ export const CHARACTERS: Character[] = [
     maxCount: 20,
     description: "An ordinary soul of the village, armed with nothing but suspicion and a vote.",
     ability: "No special power; votes during the day.",
+  },
+  {
+    id: "sheriff",
+    name: "Sheriff",
+    team: "village",
+    nightOrder: null,
+    slotless: true,
+    description:
+      "A badge of office, not a card. The village raises one of its own to lead — their word carries the weight of two.",
+    ability:
+      "Not dealt as a card and takes no seat (counts as 0). One player is appointed Sheriff at the start of the game; their vote counts double and they break any tie. If the Sheriff dies, they hand the badge to another living player.",
   },
   {
     id: "seer",
@@ -422,6 +439,11 @@ export const CHARACTERS: Character[] = [
 export const NIGHT_SEQUENCE: Character[] = CHARACTERS.filter(
   (c) => c.nightOrder !== null,
 ).sort((a, b) => (a.nightOrder ?? 0) - (b.nightOrder ?? 0));
+
+/** Titles laid over a player rather than dealt as cards — never fill a seat. */
+export const SLOTLESS_IDS = new Set(
+  CHARACTERS.filter((c) => c.slotless).map((c) => c.id),
+);
 
 export const byId = (id: string): Character | undefined =>
   CHARACTERS.find((c) => c.id === id);

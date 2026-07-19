@@ -11,6 +11,7 @@ export default function PlayerCircle({
   charmed = [],
   defended = [],
   cursed = [],
+  sheriff = null,
   onToggle,
   centerLabel,
 }: {
@@ -25,6 +26,8 @@ export default function PlayerCircle({
   defended?: string[];
   /** The Raven's cursed player — badged with "+2" extra votes for the day. */
   cursed?: string[];
+  /** The current Sheriff — badged with a star (their vote counts double). */
+  sheriff?: string | null;
   onToggle?: (name: string) => void;
   centerLabel?: string;
 }) {
@@ -52,6 +55,7 @@ export default function PlayerCircle({
         const isCharmed = charmed.includes(name) && !isDead;
         const isDefended = defended.includes(name) && !isDead;
         const isCursed = cursed.includes(name) && !isDead;
+        const isSheriff = sheriff === name && !isDead;
         const interactive = !!onToggle && !isDead;
 
         return (
@@ -102,6 +106,11 @@ export default function PlayerCircle({
               {isCursed && (
                 <span className="pointer-events-none absolute -bottom-1.5 -left-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-blood-700 px-0.5 text-[0.55rem] leading-none font-semibold text-moon-100 ring-1 ring-blood-500">
                   +2
+                </span>
+              )}
+              {isSheriff && (
+                <span className="pointer-events-none absolute -top-2.5 left-1/2 grid h-4 w-4 -translate-x-1/2 place-items-center rounded-full bg-night-950 text-[0.6rem] leading-none ring-1 ring-moon-300">
+                  ⭐
                 </span>
               )}
             </span>

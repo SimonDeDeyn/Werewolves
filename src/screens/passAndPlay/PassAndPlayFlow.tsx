@@ -198,6 +198,10 @@ export default function PassAndPlayFlow({
   // the saved game when resuming.
   const [middleCards, setMiddleCards] = useState<string[]>(resume?.middleCards ?? []);
   const [actorCards, setActorCards] = useState<string[]>(resume?.actorCards ?? []);
+  // Whether this game plays with a Sheriff — from the draft on a fresh deal, or
+  // from the saved snapshot when resuming. NightPhase runs the opening
+  // appointment and the on-death badge hand-off from it.
+  const [hasSheriff, setHasSheriff] = useState<boolean>(resume?.state.sheriffEnabled ?? false);
   // The saved night state to hydrate on resume; consumed once, then dropped so a
   // later "play again" starts clean.
   const [resumeState, setResumeState] = useState(resume?.state);
@@ -208,6 +212,7 @@ export default function PassAndPlayFlow({
     setBoard(shuffle(next));
     setMiddleCards(draft.middleCards);
     setActorCards(draft.actorCards);
+    setHasSheriff((draft.counts["sheriff"] ?? 0) > 0);
     setResumeState(undefined);
     clearGame(); // a brand-new game supersedes any old save
     setStep("board");
@@ -300,6 +305,7 @@ export default function PassAndPlayFlow({
           board={board}
           middleCards={middleCards}
           actorCards={actorCards}
+          hasSheriff={hasSheriff}
           resume={resumeState}
           onMainMenu={onMainMenu}
           onSameVillage={() => startOver("roles")}

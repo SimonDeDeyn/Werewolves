@@ -51,7 +51,11 @@ function RoleBar({
   onDec: () => void;
 }) {
   const group = character.groupSize ?? 1;
-  const wakes = character.nightOrder !== null ? "wakes at night" : "passive";
+  const wakes = character.slotless
+    ? "title · counts as 0 seats"
+    : character.nightOrder !== null
+      ? "wakes at night"
+      : "passive";
   return (
     <div
       className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${

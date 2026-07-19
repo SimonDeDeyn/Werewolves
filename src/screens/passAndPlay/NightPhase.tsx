@@ -15,6 +15,7 @@ type Phase = "night" | "day";
  * deaths are resolved.
  */
 type View =
+  | "appoint"
   | "wake"
   | "select"
   | "wolfFather"
@@ -280,6 +281,8 @@ export interface Snapshot {
   wolfSorcery: boolean;
   wolfKillCount: number;
   nightLog: string[];
+  sheriffEnabled: boolean;
+  sheriff: string | null;
 }
 
 /**
@@ -293,6 +296,7 @@ export default function NightPhase({
   board,
   middleCards = [],
   actorCards = [],
+  hasSheriff = false,
   resume,
   onMainMenu,
   onSameVillage,
@@ -303,6 +307,8 @@ export default function NightPhase({
   board: Assignment[];
   middleCards?: string[];
   actorCards?: string[];
+  /** Whether a Sheriff was chosen in the cast — one player is appointed at start. */
+  hasSheriff?: boolean;
   /** A saved Snapshot to restore into on mount (resuming an interrupted game). */
   resume?: Snapshot;
   /** Leave for the app's home screen. The game is saved and can be resumed. */
@@ -335,7 +341,11 @@ export default function NightPhase({
   const [dead, setDead] = useState<string[]>([]);
   const [round, setRound] = useState(1);
   const [phase, setPhase] = useState<Phase>("night");
-  const [view, setView] = useState<View>(initialWakeQueue.length ? "wake" : "select");
+  // A Sheriff is appointed before anything else on the first night; only then
+  // does the night's wake sequence (or the pack's kill) begin.
+  const [view, setView] = useState<View>(
+    hasSheriff ? "appoint" : initialWakeQueue.length ? "wake" : "select",
+  );
   // Turns still owed a wake-up prompt this night, in order.
   const [wakeQueue, setWakeQueue] = useState<WakeTurn[]>(initialWakeQueue);
   // Per-step scratch for the current wake prompt (e.g. the Seer's chosen target).
@@ -395,6 +405,12 @@ export default function NightPhase({
   // strike or the Wolf-Father's bite), and how many the pack marked for death.
   const [wolfSorcery, setWolfSorcery] = useState(false);
   const [wolfKillCount, setWolfKillCount] = useState(0);
+  // The Sheriff: a title appointed at the start of the game (double vote, breaks
+  // ties). On the holder's death the badge is handed to another living player, so
+  // it survives them. `sheriffEnabled` is fixed at deal time; `sheriff` is who
+  // currently wears the badge (null until the opening appointment).
+  const [sheriffEnabled, setSheriffEnabled] = useState(hasSheriff);
+  const [sheriff, setSheriff] = useState<string | null>(null);
   // Actor: which of the three fixed card positions are spent, and tonight's pick.
   // Positions stay put across nights (0/1 top row, 2 bottom-centre) so spent
   // cards leave a gap and the survivors keep their placement.
@@ -537,6 +553,8 @@ export default function NightPhase({
     wolfSorcery,
     wolfKillCount,
     nightLog,
+    sheriffEnabled,
+    sheriff,
   });
   const pushHistory = () => setHistory((h) => [...h, snapshot()]);
   // Push every field of a Snapshot back into live state — shared by Undo (steps
@@ -599,6 +617,8 @@ export default function NightPhase({
     setWolfSorcery(prev.wolfSorcery);
     setWolfKillCount(prev.wolfKillCount);
     setNightLog(prev.nightLog);
+    setSheriffEnabled(prev.sheriffEnabled);
+    setSheriff(prev.sheriff);
   };
   const undo = () => {
     if (!history.length) return;
@@ -1409,6 +1429,30 @@ export default function NightPhase({
     }
   };
 
+  /* ------------------------------ The Sheriff ---------------------------- */
+
+  /** The village appoints its first Sheriff; then the opening night proper begins. */
+  const confirmAppoint = () => {
+    if (!wakePick) return;
+    pushHistory();
+    setSheriff(wakePick);
+    logNight(`${wakePick} was appointed Sheriff — their vote counts double.`);
+    setWakePick(null);
+    setView(initialWakeQueue.length ? "wake" : "select");
+  };
+
+  /** A fallen Sheriff hands the badge to another living player, who carries it on. */
+  const passSheriff = (heir: string) => {
+    pushHistory();
+    const fallen = sheriff;
+    setSheriff(heir);
+    setLastNotes((n) => [
+      ...n,
+      `${fallen} bore the Sheriff's badge — with their last breath it passes to ${heir}.`,
+    ]);
+    setResPick(null);
+  };
+
   /** Cupid binds the two chosen players, then the sequence moves on. */
   const confirmCupid = () => {
     // One pair per Cupid — a Doppelgänger who copied Cupid fires their own arrow.
@@ -1951,6 +1995,88 @@ export default function NightPhase({
       {confirmDialog}
       {revisitOverlay}
     </>
+  );
+
+  /* ------------------------------ The Sheriff ---------------------------- */
+  // The badge is empty and must be handed on before play continues — but only
+  // while the game is live and someone still living remains to take it up.
+  const sheriffHeirs = players.filter((p) => !dead.includes(p));
+  const sheriffNeedsHeir =
+    sheriffEnabled &&
+    sheriff !== null &&
+    dead.includes(sheriff) &&
+    !result &&
+    sheriffHeirs.length > 0;
+
+  // The opening appointment: the village raises its first Sheriff before night 1.
+  if (view === "appoint") {
+    return (
+      <div className="flex flex-col items-center gap-4">
+        <p className="font-display text-xs tracking-[0.4em] text-moss-300 uppercase">
+          Before the first night
+        </p>
+        <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+          Appoint the Sheriff
+        </h1>
+        {referenceButtons}
+        <p className="max-w-sm text-center text-sm text-moss-200">
+          The village raises one of its own to lead. The Sheriff's vote counts double and breaks any
+          tie. Tap whoever the table elects to wear the badge.
+        </p>
+        <PlayerCircle
+          players={players}
+          dead={dead}
+          selected={wakePick ? [wakePick] : []}
+          sheriff={wakePick}
+          onToggle={(name) => setWakePick((c) => (c === name ? null : name))}
+          centerLabel="Sheriff"
+        />
+        <button
+          className="btn-lantern w-full max-w-sm px-4 py-3 text-lg"
+          onClick={confirmAppoint}
+          disabled={!wakePick}
+        >
+          {wakePick ? `Appoint ${wakePick} →` : "Choose the Sheriff"}
+        </button>
+        {undoRow}
+        {overlays}
+      </div>
+    );
+  }
+
+  // The hand-off after the Sheriff dies. It can interrupt either the day vote or
+  // the dawn board, so it's built once and returned from both.
+  const sheriffPassScreen = (
+    <div className="flex flex-col items-center gap-4">
+      <p className="font-display text-xs tracking-[0.4em] text-moss-300 uppercase">
+        The badge is empty
+      </p>
+      <h1 className="font-display text-2xl font-bold tracking-wider text-moon-100">
+        The Sheriff has fallen
+      </h1>
+      {referenceButtons}
+      <p className="max-w-sm text-center text-sm text-moss-200">
+        <span className="text-moon-100">{sheriff}</span> carried the Sheriff's badge. With their
+        dying breath they name a successor — tap who takes it up.
+      </p>
+      <PlayerCircle
+        players={players}
+        dead={dead}
+        selected={resPick ? [resPick] : []}
+        sheriff={resPick}
+        onToggle={(name) => setResPick((c) => (c === name ? null : name))}
+        centerLabel="New Sheriff"
+      />
+      <button
+        className="btn-lantern w-full max-w-sm px-4 py-3 text-lg"
+        onClick={() => resPick && passSheriff(resPick)}
+        disabled={!resPick}
+      >
+        {resPick ? `Hand the badge to ${resPick} →` : "Choose a successor"}
+      </button>
+      {undoRow}
+      {overlays}
+    </div>
   );
 
   /* ----------------------------- Resolve view ---------------------------- */
@@ -3185,6 +3311,10 @@ export default function NightPhase({
 
   /* --------------------------- Selection screen -------------------------- */
   if (view === "select") {
+    // A Sheriff who fell in the night is discovered at dawn: once the village has
+    // woken (and any Hunter's morning shot has resolved), the very first thing in
+    // the morning — before the day's vote — is handing the badge to a successor.
+    if (!isNight && sheriffNeedsHeir) return sheriffPassScreen;
     // The pack that actually opens its eyes: true wolves plus anyone turned (a
     // Wild Child who flipped, the Wolf-Father's convert). The Traitor sleeps
     // through it, so readsAsWolf leaves them out.
@@ -3226,6 +3356,11 @@ export default function NightPhase({
                 : "The Big Bad Wolf takes a second victim while the pack is whole."}
           </p>
         )}
+        {!isNight && sheriff !== null && !dead.includes(sheriff) && (
+          <p className="-mt-2 max-w-sm text-center text-xs text-moon-300">
+            ⭐ {sheriff} is Sheriff — their vote counts double and breaks any tie.
+          </p>
+        )}
 
         <PlayerCircle
           players={players}
@@ -3235,6 +3370,7 @@ export default function NightPhase({
           charmed={charmed}
           defended={Object.values(protectedBy)}
           cursed={phase === "day" ? ravenCursed : []}
+          sheriff={sheriff}
           onToggle={toggle}
           centerLabel={label}
         />
@@ -3352,6 +3488,10 @@ export default function NightPhase({
   const pendingShot = isNight && pendingHunters.length > 0;
   const shownResult = pendingShot ? null : result;
 
+  // A Sheriff lynched during the day names a successor then and there, at the
+  // dusk board. One killed in the night waits instead until morning (handled at
+  // the day-vote screen above), so it isn't resolved in the dark.
+  if (!isNight && sheriffNeedsHeir) return sheriffPassScreen;
 
   return (
     <div className="flex flex-col gap-4">

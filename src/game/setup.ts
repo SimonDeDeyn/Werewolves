@@ -2,7 +2,7 @@
  * Pure setup logic for the pass-and-play flow: the in-progress draft, role
  * balance helpers, and role distribution. No UI or storage here.
  */
-import { CHARACTERS, type Character } from "../data/characters";
+import { CHARACTERS, SLOTLESS_IDS, type Character } from "../data/characters";
 
 export type ModeratorMode = "app" | "player";
 
@@ -61,7 +61,7 @@ export function eligibleMiddleCards(
 ): Character[] {
   const blocked = new Set(exclude);
   return CHARACTERS.filter((c) => {
-    if (blocked.has(c.id)) return false;
+    if (c.slotless || blocked.has(c.id)) return false;
     const unused = (counts[c.id] ?? 0) === 0;
     if (strictUnused) return unused;
     return c.id === "villager" || c.id === "werewolf" || unused;
@@ -88,7 +88,7 @@ export function eligibleActorCards(
 ): Character[] {
   const blocked = new Set(exclude);
   return CHARACTERS.filter((c) => {
-    if (c.team !== "village" || c.id === "actor") return false;
+    if (c.team !== "village" || c.id === "actor" || c.slotless) return false;
     if (blocked.has(c.id)) return false;
     const unused = (counts[c.id] ?? 0) === 0;
     if (strictUnused) return unused;
@@ -111,7 +111,12 @@ export function roleSlots(draft: SetupDraft): number {
 }
 
 export function totalSelected(counts: Record<string, number>): number {
-  return Object.values(counts).reduce((a, b) => a + b, 0);
+  // Slotless titles (the Sheriff) are laid over a player, so they never count
+  // toward the seats that must be filled.
+  return Object.entries(counts).reduce(
+    (a, [id, n]) => a + (SLOTLESS_IDS.has(id) ? 0 : n),
+    0,
+  );
 }
 
 export function werewolfCount(counts: Record<string, number>): number {
@@ -181,7 +186,7 @@ export function buildPresetCounts(preset: CastPreset, slots: number): Record<str
 
 /** Passive village roles used to fill leftover seats when randomizing. */
 export const PASSIVE_FILLERS: Character[] = CHARACTERS.filter(
-  (c) => c.nightOrder === null && c.team === "village",
+  (c) => c.nightOrder === null && c.team === "village" && !c.slotless,
 );
 
 export function shuffle<T>(arr: T[]): T[] {
@@ -241,6 +246,8 @@ export function distribute(draft: SetupDraft): Assignment[] {
   const slots = roleSlots(draft);
   const pool: { id: string; random: boolean }[] = [];
   for (const [id, n] of Object.entries(draft.counts)) {
+    // Slotless titles (the Sheriff) aren't cards — they're appointed in-game.
+    if (SLOTLESS_IDS.has(id)) continue;
     for (let i = 0; i < n; i++) pool.push({ id, random: false });
   }
   if (draft.randomize && PASSIVE_FILLERS.length) {
