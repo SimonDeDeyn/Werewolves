@@ -75,7 +75,7 @@ export function CardFront({ character }: { character: Character }) {
       <div className="flex items-start justify-between gap-2">
         {/* Long names (e.g. "Accursed Wolf-Father") wrap to two lines rather
             than truncate; the night-order stat stays top-right, HP-style. */}
-        <h3 className="font-display line-clamp-2 min-w-0 flex-1 text-lg leading-tight font-semibold text-moon-100">
+        <h3 className="font-display line-clamp-2 min-w-0 flex-1 text-left text-lg leading-tight font-semibold text-moon-100">
           {character.name}
         </h3>
         <span
