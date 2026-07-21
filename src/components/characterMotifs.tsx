@@ -350,4 +350,5 @@ export const MOTIF_BY_ID: Record<string, string> = {
   "devoted-servant": "candle",
   "abominable-sectarian": "cult",
   ghost: "ghost",
+  spirit: "ghost",
 };

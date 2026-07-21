@@ -435,11 +435,21 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: "ghost",
-    name: "Ghost / Spirit",
-    team: "solo",
+    name: "Ghost",
+    team: "village",
     nightOrder: null,
-    description: "Death was not the end — merely a change of address.",
-    ability: "Dead players retain limited abilities, such as leaving hints or haunting the living.",
+    description: "Death was not the end — merely a change of address, and the dead still keep watch.",
+    ability:
+      "A dead player's way to stay in the game: they watch the night's actions and, each morning, leave the village a single cryptic letter as a clue.",
+  },
+  {
+    id: "spirit",
+    name: "Spirit",
+    team: "village",
+    nightOrder: null,
+    description: "A living medium who walks between the waking village and the restless dead.",
+    ability:
+      "A living role from the start: gathers information through the narrator, or communes with the dead, to uncover the werewolves.",
   },
 ];
 
