@@ -72,12 +72,14 @@ export function CardFront({ character }: { character: Character }) {
         boxShadow: `0 0 0 1px #000 inset, 0 0 22px ${tint}22`,
       }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="font-display truncate text-lg leading-tight font-semibold text-moon-100">
+      <div className="flex items-start justify-between gap-2">
+        {/* Long names (e.g. "Accursed Wolf-Father") wrap to two lines rather
+            than truncate; the night-order stat stays top-right, HP-style. */}
+        <h3 className="font-display line-clamp-2 min-w-0 flex-1 text-lg leading-tight font-semibold text-moon-100">
           {character.name}
         </h3>
         <span
-          className="shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold tracking-widest uppercase"
+          className="mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold tracking-widest uppercase"
           style={{ color: tint, border: `1px solid ${tint}66` }}
         >
           {character.nightOrder !== null ? `Night ${character.nightOrder}` : "Passive"}
