@@ -55,17 +55,6 @@ export const CHARACTERS: Character[] = [
     ability: "No special power; votes during the day.",
   },
   {
-    id: "sheriff",
-    name: "Sheriff",
-    team: "village",
-    nightOrder: null,
-    slotless: true,
-    description:
-      "A badge of office, not a card. The village raises one of its own to lead — their word carries the weight of two.",
-    ability:
-      "Not dealt as a card and takes no seat (counts as 0). One player is appointed Sheriff at the start of the game; their vote counts double and they break any tie. If the Sheriff dies, they hand the badge to another living player.",
-  },
-  {
     id: "seer",
     name: "Seer",
     team: "village",
@@ -147,9 +136,10 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: "sheriff",
-    name: "Judge / Sheriff",
+    name: "Sheriff",
     team: "village",
     nightOrder: null,
+    slotless: true,
     description: "Elected by the village, their word carries the weight of two.",
     ability: "Elected role; their vote counts double, or breaks ties.",
   },
