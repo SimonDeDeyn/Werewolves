@@ -256,14 +256,6 @@ export const CHARACTERS: Character[] = [
       "Each night, curses a player, adding two extra guilty votes against them the next day.",
   },
   {
-    id: "rabble-rouser",
-    name: "Rabble-Rouser",
-    team: "village",
-    nightOrder: null,
-    description: "A firebrand who whips the square into a frenzy — one hanging is never enough.",
-    ability: "Forces the village to execute two players each day instead of one, hastening the reckoning.",
-  },
-  {
     id: "town-crier",
     name: "Town Crier",
     team: "village",
@@ -272,6 +264,14 @@ export const CHARACTERS: Character[] = [
     description: "When they shout, the whole village listens — like it or not.",
     ability:
       "Gathers or shares vital news — learning how many powers stirred in the night, or broadcasting an announcement to all.",
+  },
+  {
+    id: "rabble-rouser",
+    name: "Rabble-Rouser",
+    team: "village",
+    nightOrder: null,
+    description: "A firebrand who whips the square into a frenzy — one hanging is never enough.",
+    ability: "Forces the village to execute two players each day instead of one, hastening the reckoning.",
   },
   {
     id: "grandmother",
