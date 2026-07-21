@@ -332,6 +332,8 @@ export const MOTIF_BY_ID: Record<string, string> = {
   "village-idiot": "jester",
   raven: "raven",
   "rabble-rouser": "bell",
+  "town-crier": "bell",
+  "double-agent": "dagger",
   grandmother: "elder",
   rooster: "rooster",
   werewolf: "wolf",

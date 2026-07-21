@@ -231,12 +231,12 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: "actor",
-    name: "Actor / Double Agent",
+    name: "Actor",
     team: "village",
     nightOrder: 30,
-    description: "A different mask for every moonrise.",
+    description: "A different mask for every moonrise — always in the village's service.",
     ability:
-      "Can temporarily become one of the unused character cards and use its power for a turn.",
+      "A loyal villager who, each night, takes on one of a small pool of unused cards and uses its power for that night.",
   },
   {
     id: "village-idiot",
@@ -257,12 +257,21 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: "rabble-rouser",
-    name: "Rabble-Rouser / Town Crier",
+    name: "Rabble-Rouser",
+    team: "village",
+    nightOrder: null,
+    description: "A firebrand who whips the square into a frenzy — one hanging is never enough.",
+    ability: "Forces the village to execute two players each day instead of one, hastening the reckoning.",
+  },
+  {
+    id: "town-crier",
+    name: "Town Crier",
     team: "village",
     nightOrder: null,
     oncePerGame: true,
     description: "When they shout, the whole village listens — like it or not.",
-    ability: "Once per game, can announce a special extra rule or twist for the day.",
+    ability:
+      "Gathers or shares vital news — learning how many powers stirred in the night, or broadcasting an announcement to all.",
   },
   {
     id: "grandmother",
@@ -370,6 +379,15 @@ export const CHARACTERS: Character[] = [
     firstNightOnly: true,
     description: "Wears a stolen face better than its own.",
     ability: "Copies another player's role at the start of the game.",
+  },
+  {
+    id: "double-agent",
+    name: "Double Agent",
+    team: "solo",
+    nightOrder: null,
+    description: "Plays both hands, and answers only to their own.",
+    ability:
+      "A deceptive third party who works with a secret partner to turn village and wolves against each other, chasing a solo victory.",
   },
   {
     id: "angel",
